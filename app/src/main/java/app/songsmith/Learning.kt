@@ -240,7 +240,21 @@ class LearningComposer(private val ctx: Context, private val speak: SpeakToFile)
             SimpleLesson.make(all, age)
         }
         lesson.age = age; lesson.style = style
-        return record(lesson)
+        return if (prefs.usesLyria) recordSung(lesson) else record(lesson)
+    }
+
+    /** Real singers: Lyria sings the lesson's lines, with the group answering the shout-back lines. */
+    private suspend fun recordSung(lesson: Lesson): Entry {
+        Studio.report("Recording real singers… (about a minute)")
+        val id = "k" + System.currentTimeMillis().toString(36)
+        val tmp = File(lib.mp3(id).path + ".tmp")
+        Lyria.generate(prefs.geminiKey, Lyria.learningPrompt(lesson, lesson.style), tmp)
+        tmp.renameTo(lib.mp3(id))
+        val secs = Lyria.durationSeconds(lib.mp3(id))
+        lesson.timeline = emptyList()
+        val song = placeholderSong(lesson.title, "Learning song", 104, "", "A sung learning song.", "", "duet")
+        return lib.save(id, song, "Learning: " + lesson.topic, System.currentTimeMillis(), emptyList(), lesson.toJson().toString(),
+            real = mapOf("real" to true, "seconds" to secs))
     }
 
     /** Voices every line, lays them on the beat, builds a music bed to fit and mixes the two. */

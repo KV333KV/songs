@@ -131,7 +131,7 @@ class PlaybackService : MediaLibraryService() {
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC).build()
     ).build()
 
-    private fun songItem(e: Entry) = MediaItem.Builder().setMediaId("song:${e.id}").setUri(Uri.fromFile(lib.wav(e.id))).setMediaMetadata(
+    private fun songItem(e: Entry) = MediaItem.Builder().setMediaId("song:${e.id}").setUri(Uri.fromFile(lib.audio(e.id))).setMediaMetadata(
         MediaMetadata.Builder().setTitle(e.title)
             .setArtist(listOf(e.genre, VOCAL_LABEL[e.vocal] ?: "").filter { it.isNotBlank() }.joinToString(" · "))
             .setAlbumTitle("Songsmith").setIsBrowsable(false).setIsPlayable(true)

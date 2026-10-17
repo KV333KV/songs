@@ -268,6 +268,22 @@ private fun SingAlong(id: String, lesson: Lesson, controller: MediaController?) 
             delay(200)
         }
     }
+    if (lesson.timeline.isEmpty()) {
+        // Sung by real singers: show the full lyrics to read along.
+        Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+            Column(Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                lesson.sections.forEach { s ->
+                    Text(when (s.type) { "chorus" -> "Chorus"; "call" -> "Call and answer"; "quiz" -> "Quiz"; else -> "Verse" },
+                        fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    s.lines.forEach { l ->
+                        Text(l.text, fontSize = 17.sp, lineHeight = 22.sp)
+                        if (l.answer.isNotBlank()) Text("Everyone: " + l.answer, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = Berry)
+                    }
+                }
+            }
+        }
+        return
+    }
     val current = lesson.timeline.indexOfLast { it.t <= pos + .1 }
     Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
         Column(Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {

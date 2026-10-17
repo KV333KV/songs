@@ -41,6 +41,15 @@ class Prefs(ctx: Context) {
     var seenTour: Boolean
         get() = sp.getBoolean("seenTour", false)
         set(v) = sp.edit().putBoolean("seenTour", v).apply()
+    /** Google Gemini key for real audio (Lyria). */
+    var geminiKey: String
+        get() = sp.getString("geminiKey", "") ?: ""
+        set(v) = sp.edit().putString("geminiKey", v.trim()).apply()
+    /** "real" = finished audio from Lyria; "sketch" = the in-app synth engine. */
+    var sound: String
+        get() = sp.getString("sound", "real") ?: "real"
+        set(v) = sp.edit().putString("sound", v).apply()
+    val usesLyria: Boolean get() = sound == "real" && geminiKey.isNotBlank()
     var autoCompose: Boolean
         get() = sp.getBoolean("autoCompose", true)
         set(v) = sp.edit().putBoolean("autoCompose", v).apply()
@@ -54,6 +63,9 @@ data class Entry(
     val samples: List<String> = emptyList(),
     /** Learning songs carry their lesson (lines, timing, quiz) as JSON. */
     val lesson: String = "",
+    /** True for finished audio from Lyria (an MP3), false for in-app sketches. */
+    val real: Boolean = false,
+    val lyriaBrief: String = "",
 )
 
 /** Songs live in app storage: <id>.json (song + details) and <id>.wav (the rendered audio). */
@@ -61,11 +73,14 @@ class Library(ctx: Context) {
     private val dir = File(ctx.filesDir, "songs").apply { mkdirs() }
 
     fun wav(id: String) = File(dir, "$id.wav")
+    fun mp3(id: String) = File(dir, "$id.mp3")
+    /** Whichever audio file this song has. */
+    fun audio(id: String): File = mp3(id).takeIf { it.exists() } ?: wav(id)
     private fun json(id: String) = File(dir, "$id.json")
 
     fun list(): List<Entry> = (dir.listFiles { f -> f.name.endsWith(".json") } ?: emptyArray())
         .mapNotNull { f -> runCatching { load(f.nameWithoutExtension)?.first }.getOrNull() }
-        .filter { wav(it.id).exists() }
+        .filter { audio(it.id).exists() }
         .sortedByDescending { it.updated }
 
     fun latest(): Entry? = list().firstOrNull()
@@ -78,31 +93,40 @@ class Library(ctx: Context) {
         return Entry(
             id = id, title = song.title, genre = song.genre, bpm = song.bpm, key = song.key,
             vocal = song.instruments["vocal"] ?: "none",
-            seconds = wav(id).length().let { if (it > 44) (it - 44) / (4.0 * SAMPLE_RATE) else song.seconds },
+            seconds = if (mp3(id).exists()) m.optDouble("seconds", 0.0) else wav(id).length().let { if (it > 44) (it - 44) / (4.0 * SAMPLE_RATE) else song.seconds },
             created = m.optLong("created"), updated = m.optLong("updated"), brief = m.optString("brief"),
             lyrics = song.lyricsText(), summary = song.summary,
             samples = m.optJSONArray("samples")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
             lesson = m.optJSONObject("lesson")?.toString() ?: "",
+            real = m.optBoolean("real", false),
+            lyriaBrief = m.optString("lyriaBrief", ""),
         ) to song
     }
 
-    fun save(id: String, song: Song, brief: String, created: Long, samples: List<String> = emptyList(), lesson: String = ""): Entry {
+    fun save(id: String, song: Song, brief: String, created: Long, samples: List<String> = emptyList(), lesson: String = "", real: Map<String, Any> = emptyMap()): Entry {
         val now = System.currentTimeMillis()
         val o = JSONObject()
             .put("meta", JSONObject().put("id", id).put("created", created).put("updated", now).put("brief", brief).put("samples", org.json.JSONArray(samples))
-                .apply { if (lesson.isNotEmpty()) put("lesson", JSONObject(lesson)) })
+                .apply { if (lesson.isNotEmpty()) put("lesson", JSONObject(lesson)); real.forEach { (k, v) -> put(k, v) } })
             .put("song", song.toJson())
         json(id).writeText(o.toString())
         return load(id)!!.first
     }
 
-    fun delete(id: String) { json(id).delete(); wav(id).delete() }
+    fun delete(id: String) { json(id).delete(); wav(id).delete(); mp3(id).delete() }
 
     fun find(query: String): List<Entry> {
         val q = query.lowercase().trim()
         if (q.isEmpty()) return emptyList()
         return list().filter { it.title.lowercase().contains(q) || q.contains(it.title.lowercase()) }
     }
+}
+
+/** A stand-in score for a finished-audio track, so it lives in the library like any other song. */
+fun placeholderSong(title: String, genre: String, bpm: Int, key: String, summary: String, lyrics: String, vocal: String): Song {
+    val inst = TRACKS.associateWith { PRESETS[it]!![0] }.toMutableMap().apply { put("vocal", vocal) }
+    return Song(title.take(80), genre.take(40), bpm.coerceIn(50, 200), key.take(24), 0.0, summary.take(700), inst,
+        linkedMapOf("track" to Pattern(4, emptyList(), emptyMap())), listOf(Section("Track", "track", 1, lyrics.take(1200))))
 }
 
 /** Shared progress that the phone screen shows while the service composes. */
@@ -126,6 +150,7 @@ class Composer(ctx: Context) {
 
     suspend fun compose(brief: String, voices: Voices, length: String, sampleIds: List<String> = emptyList()): Entry {
         val metas = sampleIds.mapNotNull { store.meta(it) }
+        if (prefs.usesLyria) return composeReal(brief, voices, length, metas)
         if (!prefs.usesClaude) {
             Studio.report("Composing with the built-in composer…")
             val created = System.currentTimeMillis()
@@ -147,6 +172,11 @@ class Composer(ctx: Context) {
 
     suspend fun refine(id: String, change: String): Entry {
         val (entry, song) = lib.load(id) ?: throw ClaudeException("That song isn't on this phone any more.")
+        if (entry.real || prefs.usesLyria) {
+            val metas = entry.samples.mapNotNull { store.meta(it) }
+            val length = if (entry.seconds in 1.0..90.0) "short" else "full"
+            return composeReal(entry.brief, Voices.of(entry.vocal), length, metas, change, entry.lyriaBrief.ifBlank { null }, id, entry.created)
+        }
         if (!prefs.usesClaude) {
             Studio.report("Reworking “${entry.title}” with the built-in composer…")
             val brief = (entry.brief + "\n" + change).trim()
@@ -174,6 +204,38 @@ class Composer(ctx: Context) {
         val tmp = File(lib.wav(id).path + ".tmp")
         synth.writeWav(l, r, tmp)
         tmp.renameTo(lib.wav(id))
+    }
+
+    /** Finished audio: Claude (if there's a key) writes the producer brief, Lyria makes the track. */
+    private suspend fun composeReal(
+        brief: String, voices: Voices, length: String, metas: List<SampleMeta>,
+        change: String? = null, previous: String? = null, reuseId: String? = null, created: Long = System.currentTimeMillis(),
+    ): Entry {
+        var title = "Untitled"; var genre = "Electronic"; var bpm = 138; var key = ""; var summary = ""
+        val lyriaBrief: String
+        if (prefs.usesClaude) {
+            Studio.report("Claude is producing the brief…")
+            val text = claude.complete(prefs.apiKey, prefs.model, Lyria.producerRequest(brief, voices, length, metas, change, previous), 4000)
+            val o = extractJson(text)
+            title = o.optString("title", title); genre = o.optString("genre", genre); bpm = o.optInt("bpm", bpm)
+            key = o.optString("key", ""); summary = o.optString("summary", "")
+            lyriaBrief = o.optString("brief").ifBlank { Lyria.templatePrompt(listOf(brief, change ?: "").joinToString(" "), voices, length, metas) }
+        } else {
+            lyriaBrief = Lyria.templatePrompt(listOf(previous ?: brief, change ?: "").filter { it.isNotBlank() }.joinToString("\n"), voices, length, metas)
+            title = Generator.compose(brief, voices, "short", emptyList(), created).title
+            summary = "Finished audio made with Google Lyria from your description."
+        }
+        Studio.report("Recording the real track… (about a minute)")
+        val id = reuseId ?: ("r" + System.currentTimeMillis().toString(36))
+        val tmp = File(lib.mp3(id).path + ".tmp")
+        val res = Lyria.generate(prefs.geminiKey, lyriaBrief, tmp)
+        lib.wav(id).delete()
+        tmp.renameTo(lib.mp3(id))
+        val secs = Lyria.durationSeconds(lib.mp3(id))
+        val lyrics = res.text.takeIf { voices.combo() != "none" && it.isNotBlank() && !it.trimStart().startsWith("{") } ?: ""
+        val song = placeholderSong(title, genre, bpm, key, summary, lyrics, voices.combo())
+        val fullBrief = if (change != null) (brief + "\n" + change).trim() else brief
+        return lib.save(id, song, fullBrief, created, metas.map { it.id }, real = mapOf("real" to true, "lyriaBrief" to lyriaBrief, "seconds" to secs))
     }
 
     /** A soft chord bed to play in the car while Claude is writing. */

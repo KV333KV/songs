@@ -13,6 +13,7 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Offline renderer: turns a Song into stereo PCM. Same instruments, drums and formant-synth
@@ -350,14 +351,49 @@ class Synth(val sr: Int = 32000) {
             }
             if (idx % 64 == 0) onProgress(idx.toDouble() / events.size)
         }
+        // Sidechain pumping: the music ducks under every kick and breathes back in, the classic dance-music pulse.
+        val duck = FloatArray(len) { 1f }
+        val pump = (.32 * spb * sr).toInt().coerceAtLeast(1)
+        for (e in events) {
+            if (e.track != "drums" || e.hit != 'k') continue
+            val st = ((.05 + e.beat * spb + swingOffset(e.beat, song.swing, spb)) * sr).toInt()
+            for (k in 0 until pump) {
+                val i = st + k; if (i < 0 || i >= len) continue
+                val x = k.toFloat() / pump
+                duck[i] = min(duck[i], .38f + .62f * x * sqrt(x))
+            }
+        }
+        for (i in 0 until len) { l[i] *= duck[i]; r[i] *= duck[i] }
+        // Risers: a white-noise sweep that climbs through every build into the drop.
+        var barPos = 0
+        for (sec in song.arrangement) {
+            val bars = (song.patterns[sec.pattern]?.bars ?: 0) * sec.repeat
+            if (sec.name.contains("build", true) || sec.name.contains("rise", true)) {
+                val a0 = ((.05 + barPos * 4 * spb) * sr).toInt(); val n = (bars * 4 * spb * sr).toInt()
+                val hp = Biquad(); val noise = java.util.Random(barPos.toLong())
+                for (k in 0 until n) {
+                    val i = a0 + k; if (i >= len) break
+                    val x = k.toDouble() / n
+                    if (k % 64 == 0) hp.set('h', 300.0 + 7700.0 * x * x, 1.2, sr)
+                    val v = (hp.process(noise.nextDouble() * 2 - 1) * .22 * x * x).toFloat()
+                    l[i] += v; r[i] += v; rev[i] += v * .6f
+                }
+            }
+            barPos += bars
+        }
         if (drumPreset == "lofi") { val f = Biquad().apply { set('l', 3600.0, .7, sr) }; for (i in drums.indices) drums[i] = f.process(drums[i].toDouble()).toFloat() }
         val dv = (vol["drums"] ?: .9).toFloat(); val ds = (send["drums"]!! * (vol["drums"] ?: .9)).toFloat()
         for (i in drums.indices) { l[i] += drums[i] * dv; r[i] += drums[i] * dv; rev[i] += drums[i] * ds }
         reverb(rev, l, r)
+        // Master: normalise, then a soft saturating limiter for a louder, warmer, club-style finish.
         var peak = 1e-6f
         for (i in l.indices) { peak = max(peak, max(abs(l[i]), abs(r[i]))) }
-        val g = min(4f, .89f / peak)
-        for (i in l.indices) { l[i] *= g; r[i] *= g }
+        val g = min(6f, 1f / peak)
+        val drive = 1.8f; val norm = kotlin.math.tanh(drive)
+        for (i in l.indices) {
+            l[i] = (kotlin.math.tanh(l[i] * g * drive) / norm) * .95f
+            r[i] = (kotlin.math.tanh(r[i] * g * drive) / norm) * .95f
+        }
         onProgress(1.0)
         return l to r
     }

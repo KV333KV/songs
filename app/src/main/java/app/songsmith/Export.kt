@@ -30,6 +30,12 @@ object Exporter {
         val lib = Library(ctx)
         val store = SampleStore(ctx)
         val (entry, song) = lib.load(id) ?: throw IllegalStateException("That song isn't on this phone any more.")
+        if (lib.mp3(id).exists()) {
+            // Finished audio from Lyria never contains the user's recorded snippets, so it can be shared as is.
+            val mp3 = File(File(ctx.cacheDir, "exports").apply { mkdirs() }, safeName(entry.title) + ".mp3")
+            lib.mp3(id).copyTo(mp3, overwrite = true)
+            return@withContext Result(mp3, 0)
+        }
         val used = song.patterns.values.flatMap { p -> p.samples.map { it.id } }.toSet()
         val blocked = uncleared(ctx, used).toSet()
         val out = File(File(ctx.cacheDir, "exports").apply { mkdirs() }, safeName(entry.title) + ".wav")
@@ -54,7 +60,7 @@ object Exporter {
         val resolver = ctx.contentResolver
         val values = ContentValues().apply {
             put(MediaStore.Audio.Media.DISPLAY_NAME, file.name)
-            put(MediaStore.Audio.Media.MIME_TYPE, "audio/wav")
+            put(MediaStore.Audio.Media.MIME_TYPE, if (file.extension == "mp3") "audio/mpeg" else "audio/wav")
             put(MediaStore.Audio.Media.TITLE, title)
             put(MediaStore.Audio.Media.ARTIST, "Songsmith")
             put(MediaStore.Audio.Media.ALBUM, "Songsmith")
@@ -73,7 +79,7 @@ object Exporter {
     fun share(ctx: Context, file: File, title: String) {
         val uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", file)
         val send = Intent(Intent.ACTION_SEND).apply {
-            type = "audio/wav"
+            type = if (file.extension == "mp3") "audio/mpeg" else "audio/wav"
             putExtra(Intent.EXTRA_STREAM, uri)
             putExtra(Intent.EXTRA_TITLE, title)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)

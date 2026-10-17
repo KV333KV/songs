@@ -383,7 +383,12 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onHelp: () -
             Icon(painterResource(R.drawable.ic_spark), null); Spacer(Modifier.width(10.dp))
             Text(if (state.busy) "Composing…" else "Compose & play", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
         }
-        Text(if (prefs.usesClaude) "Composing with Claude (your API key)." else "Composing with the free built-in composer. Add an API key in Settings to compose with Claude.",
+        Text(when {
+                prefs.usesLyria && prefs.usesClaude -> "Real audio: Claude produces, Google Lyria records a finished track."
+                prefs.usesLyria -> "Real audio from Google Lyria. Add a Claude key for smarter production briefs."
+                prefs.usesClaude -> "Sketch mode with Claude. Add a Google key in Settings for real, finished audio."
+                else -> "Sketch mode with the free composer. Add a Google key in Settings for real, finished audio."
+            },
             fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         StatusCard(state)
 
@@ -614,6 +619,8 @@ fun SettingsScreen(onHelp: () -> Unit = {}) {
     var model by remember { mutableStateOf(prefs.model) }
     var auto by remember { mutableStateOf(prefs.autoCompose) }
     var engine by remember { mutableStateOf(prefs.engine) }
+    var sound by remember { mutableStateOf(prefs.sound) }
+    var gemini by remember { mutableStateOf(prefs.geminiKey) }
     var test by remember { mutableStateOf("") }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -624,6 +631,23 @@ fun SettingsScreen(onHelp: () -> Unit = {}) {
         UpdateSection()
         val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
         Text("Songsmith version $version", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Sound", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            listOf("real" to "Real audio", "sketch" to "Sketch (free)").forEachIndexed { i, (v, label) ->
+                SegmentedButton(selected = sound == v, onClick = { sound = v; prefs.sound = v }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+            }
+        }
+        Text(
+            when {
+                sound == "sketch" -> "Sketch uses the in-app instruments: free and offline, but it sounds like a demo."
+                gemini.isBlank() -> "Real audio makes finished, mastered tracks with Google Lyria (about US$0.08 a track). Add your Google key below. Until then, sketches are made."
+                else -> "Real audio: finished, mastered tracks from Google Lyria, billed to your Google key. Learning songs are sung by real singers."
+            }, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(gemini, { gemini = it; prefs.geminiKey = it }, label = { Text("Google Gemini API key (for real audio)") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+        Text("Get one at aistudio.google.com/apikey, then turn on billing for that project (Lyria has no free tier). Set a budget alert in Google Cloud billing so costs never surprise you.",
+            fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
         Text("Composer", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
             listOf("claude" to "Claude", "builtin" to "Built-in (free)").forEachIndexed { i, (v, label) ->
