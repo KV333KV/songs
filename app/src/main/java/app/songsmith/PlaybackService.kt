@@ -61,6 +61,10 @@ class PlaybackService : MediaLibraryService() {
         const val EXTRA_LENGTH = "length"
         const val EXTRA_CHANGE = "change"
         const val EXTRA_SAMPLES = "samples"
+        const val EXTRA_TEXT = "text"
+        const val EXTRA_AGE = "age"
+        const val EXTRA_STYLE = "style"
+        const val EXTRA_PHOTO = "photo"
 
         /** One-tap ideas for the car screen. */
         val IDEA_LIST = listOf(
@@ -155,6 +159,44 @@ class PlaybackService : MediaLibraryService() {
 
     private suspend fun say(text: String): MutableList<MediaItem> = listOfNotNull(speech(text)).toMutableList()
 
+    /** Text-to-speech into a file with a chosen speed, pitch and language, for learning songs. */
+    private val speakToFile: SpeakToFile = { text, file, rate, pitch, language ->
+        withContext(Dispatchers.Main) {
+            val ok = withTimeoutOrNull(4000) { ttsReady.await() } ?: false
+            val engine = tts
+            if (!ok || engine == null) false else {
+                val loc = Locale.forLanguageTag(language.ifBlank { "en" })
+                if (engine.isLanguageAvailable(loc) >= TextToSpeech.LANG_AVAILABLE) engine.setLanguage(loc) else engine.setLanguage(Locale.getDefault())
+                engine.setSpeechRate(rate); engine.setPitch(pitch)
+                val id = "lesson${ttsCount++}"
+                val done = CompletableDeferred<Boolean>()
+                pending[id] = done
+                val r = engine.synthesizeToFile(text, Bundle(), file, id)
+                val good = if (r == TextToSpeech.SUCCESS) withTimeoutOrNull(15_000) { done.await() } ?: false else { pending.remove(id); false }
+                engine.setSpeechRate(1f); engine.setPitch(1f); engine.setLanguage(Locale.getDefault())
+                good
+            }
+        }
+    }
+
+    private suspend fun startLearn(text: String, age: String, style: String, photo: File?): MutableList<MediaItem> {
+        if (job?.isActive == true) return say("I'm still working on the last song. It'll start as soon as it's ready.")
+        job = scope.launch {
+            try {
+                val e = LearningComposer(this@PlaybackService, speakToFile).make(text, age, style, photo)
+                Studio.done("“${e.title}” is ready. Open Learn to sing along.")
+                session.notifyChildrenChanged(SONGS, lib.list().size, null)
+                play(say("Here's your learning song. Let's sing along!") + songItem(e))
+            } catch (ex: Exception) {
+                if (ex is kotlinx.coroutines.CancellationException) throw ex
+                val msg = ex.message ?: "Something went wrong."
+                Studio.fail(msg)
+                play(say("Sorry, that didn't work. $msg"))
+            }
+        }
+        return say("Let's turn that into a song. Give me a moment.")
+    }
+
     private fun play(items: List<MediaItem>) {
         if (items.isEmpty()) return
         player.setMediaItems(items)
@@ -174,6 +216,10 @@ class PlaybackService : MediaLibraryService() {
             return mutableListOf(songItem(latest))
         }
         lib.find(q).firstOrNull()?.let { if (it.title.equals(q, true)) return mutableListOf(songItem(it)) }
+        Regex("^(?:a )?(?:learning song|song to learn|learn|teach me|help me (?:learn|remember))(?: about| to| that)?\\s*(.*)$", RegexOption.IGNORE_CASE).find(q)?.let { m ->
+            val topic = m.groupValues[1].ifBlank { q }
+            return startLearn(topic, "7-9", "clap", null)
+        }
         if (refineWords.containsMatchIn(q)) lib.latest()?.let { return startRefine(it.id, q) }
         val wantsSamples = Regex("\\b(my )?(samples?|snippets?|recordings?|chops?)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
         val ids = if (wantsSamples) SampleStore(this).list().take(3).map { it.id } else emptyList()
@@ -257,6 +303,12 @@ class PlaybackService : MediaLibraryService() {
                 Voices.of(extras?.getString(EXTRA_VOICES) ?: prefs.voices.combo()),
                 extras?.getString(EXTRA_LENGTH) ?: prefs.length,
                 extras?.getString(EXTRA_SAMPLES)?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
+            )
+            id == "learn" -> startLearn(
+                extras?.getString(EXTRA_TEXT) ?: "",
+                extras?.getString(EXTRA_AGE) ?: "7-9",
+                extras?.getString(EXTRA_STYLE) ?: "clap",
+                extras?.getString(EXTRA_PHOTO)?.let { File(it) }?.takeIf { it.exists() },
             )
             id.startsWith("refine:") -> startRefine(id.removePrefix("refine:"), extras?.getString(EXTRA_CHANGE) ?: "Make it better.")
             id == "latest" -> lib.latest()?.let { mutableListOf(songItem(it)) } ?: mutableListOf()

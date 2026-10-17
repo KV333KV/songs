@@ -214,7 +214,7 @@ fun App(controller: MediaController?) {
             Column {
                 NowPlaying(controller)
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    listOf(Triple("Create", R.drawable.ic_spark, 0), Triple("Samples", R.drawable.ic_wave, 1), Triple("Library", R.drawable.ic_library, 2), Triple("Settings", R.drawable.ic_settings, 3)).forEach { (label, icon, i) ->
+                    listOf(Triple("Create", R.drawable.ic_spark, 0), Triple("Learn", R.drawable.ic_learn, 4), Triple("Samples", R.drawable.ic_wave, 1), Triple("Library", R.drawable.ic_library, 2), Triple("Settings", R.drawable.ic_settings, 3)).forEach { (label, icon, i) ->
                         NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Icon(painterResource(icon), null) }, label = { Text(label) })
                     }
                 }
@@ -226,6 +226,7 @@ fun App(controller: MediaController?) {
                 0 -> CreateScreen(controller, state) { driving = true }
                 1 -> SamplesScreen(state)
                 2 -> LibraryScreen(controller, state)
+                4 -> LearnScreen(controller, state)
                 else -> SettingsScreen()
             }
         }
@@ -534,13 +535,14 @@ fun SongCard(e: Entry, expanded: Boolean, controller: MediaController?, busy: Bo
                 if (exportMsg.isNotEmpty()) Text(exportMsg, fontSize = 13.sp)
                 if (e.summary.isNotBlank()) Text(e.summary, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (e.lyrics.isNotBlank()) Text(e.lyrics, fontSize = 14.sp)
-                Box {
+                if (e.lesson.isNotEmpty()) Text("Learning song: open the Learn tab for the sing-along and quiz.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (e.lesson.isEmpty()) Box {
                     OutlinedTextField(change, { change = it }, placeholder = { Text("Change it: more energy, darker breakdown…") },
                         modifier = Modifier.fillMaxWidth().padding(end = 56.dp), shape = RoundedCornerShape(14.dp))
                     FilledIconButton(onClick = dictate, modifier = Modifier.align(Alignment.CenterEnd)) { Icon(painterResource(R.drawable.ic_mic), "Speak a change") }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { controller?.let { requestRefine(it, e.id, change.trim()); change = "" } }, enabled = change.isNotBlank() && !busy && controller != null) { Text("Apply change") }
+                    if (e.lesson.isEmpty()) Button(onClick = { controller?.let { requestRefine(it, e.id, change.trim()); change = "" } }, enabled = change.isNotBlank() && !busy && controller != null) { Text("Apply change") }
                     OutlinedButton(onClick = { if (armed) onDelete() else armed = true }) { Text(if (armed) "Tap again to delete" else "Delete") }
                 }
             }

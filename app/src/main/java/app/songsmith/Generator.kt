@@ -1,5 +1,6 @@
 package app.songsmith
 
+import kotlin.math.max
 import kotlin.random.Random
 
 /**
@@ -266,4 +267,83 @@ object Generator {
         )
     }
 
+    /* ---------------- music beds for kids' learning songs ---------------- */
+
+    private val MAJOR = intArrayOf(0, 2, 4, 5, 7, 9, 11)
+    private val KID_PROGS = listOf(intArrayOf(0, 4, 5, 3), intArrayOf(0, 3, 4, 3), intArrayOf(0, 5, 3, 4))
+
+    /**
+     * A bright, steady major-key bed that leaves room for the spoken lines.
+     * [sections] lists each part (intro, chorus, verse, call, quiz, outro) with its length in bars.
+     */
+    fun kidsBed(title: String, bpm: Int, style: String, sections: List<Pair<String, Int>>, seed: Long): Song {
+        val r = Random(seed)
+        val keyPc = listOf(0, 2, 5, 7).random(r)
+        val keyName = listOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")[keyPc] + " major"
+        val prog = KID_PROGS.random(r)
+        fun note(base: Int, deg: Int): Int = base + keyPc + Math.floorDiv(deg, 7) * 12 + MAJOR[((deg % 7) + 7) % 7]
+        fun triad(deg: Int): List<Int> = listOf(deg, deg + 2, deg + 4).map { var m = note(48, it); while (m > 72) m -= 12; while (m < 52) m += 12; m }.sorted()
+        fun root(deg: Int): Int { var m = note(24, deg); while (m < 31) m += 12; while (m > 43) m -= 12; return m }
+        val hook = run {
+            val degs = listOf(listOf(4, 4, 5, 4, 2, 0, 1, 2), listOf(0, 2, 4, 5, 4, 2, 4, 0), listOf(7, 6, 4, 5, 4, 2, 1, 0)).random(r)
+            degs.mapIndexed { i, d -> Note(i * 2.0, note(72, d), 1.5, .5) }
+        }
+
+        fun part(kind: String): Pattern {
+            val bars = 4
+            val drums = ArrayList<Hit>(); val bass = ArrayList<Note>(); val chords = ArrayList<Note>(); val arp = ArrayList<Note>(); val lead = ArrayList<Note>()
+            val quiet = kind == "quiz" || kind == "intro" && style == "calm"
+            for (b in 0 until bars) {
+                val o = b * 4.0
+                val deg = prog[b % 4]
+                val tones = triad(deg)
+                when (style) {
+                    "dance" -> {
+                        if (!quiet) { for (i in 0..3) drums.add(Hit(o + i, 'k', .9)) }
+                        for (i in 0..3) { drums.add(Hit(o + i + .5, 'o', .35)) }
+                        if (kind != "intro") { drums.add(Hit(o + 1, 'c', .6)); drums.add(Hit(o + 3, 'c', .6)) }
+                        for (i in 0..3) { bass.add(Note(o + i + .5, root(deg), .4, .75)) }
+                        listOf(0.0, 1.5, 3.0).forEach { at -> tones.forEach { chords.add(Note(o + at, it, .5, .5)) } }
+                    }
+                    "chant" -> {
+                        if (!quiet) { drums.add(Hit(o, 'k', 1.0)); drums.add(Hit(o + 2.5, 'k', .8)) }
+                        drums.add(Hit(o + 1, 's', .7)); drums.add(Hit(o + 3, 's', .75))
+                        for (i in 0 until 8) { drums.add(Hit(o + i * .5, 'h', if (i % 2 == 0) .35 else .25)) }
+                        bass.add(Note(o, root(deg), 1.5, .85)); bass.add(Note(o + 2.5, root(deg), 1.0, .7))
+                        tones.forEach { chords.add(Note(o, it, 3.5, .35)) }
+                    }
+                    "calm" -> {
+                        if (!quiet) { drums.add(Hit(o, 'h', .25)) }
+                        bass.add(Note(o, root(deg), 3.5, .6))
+                        tones.forEach { chords.add(Note(o, it, 4.0, .45)) }
+                        for (s in 0 until 4) { arp.add(Note(o + s, tones[s % 3] + 12, .9, .3)) }
+                    }
+                    else -> { // clap-along
+                        if (!quiet) { drums.add(Hit(o, 'k', .9)); drums.add(Hit(o + 2, 'k', .85)) }
+                        drums.add(Hit(o + 1, 'c', .8)); drums.add(Hit(o + 3, 'c', .8))
+                        for (i in 0 until 8) { drums.add(Hit(o + i * .5, 'h', .3)) }
+                        bass.add(Note(o, root(deg), .9, .8)); bass.add(Note(o + 1, root(deg) + 7, .9, .7)); bass.add(Note(o + 2, root(deg), .9, .8)); bass.add(Note(o + 3, root(deg) + 7, .9, .7))
+                        listOf(0.0, 1.0, 2.0, 3.0).forEach { at -> tones.forEach { chords.add(Note(o + at, it, .45, .4)) } }
+                    }
+                }
+                if (kind == "chorus" && style != "calm") { for (s in 0 until 8) arp.add(Note(o + s * .5, tones[s % 3] + 12, .35, .3)) }
+            }
+            if (kind == "intro" || kind == "outro") { hook.forEach { lead.add(it) } }
+            return Pattern(bars, drums, mapOf("bass" to bass, "chords" to chords, "lead" to lead, "arp" to arp, "vocal" to emptyList()))
+        }
+
+        val kinds = listOf("intro", "chorus", "verse", "call", "quiz", "outro")
+        val patterns = LinkedHashMap<String, Pattern>()
+        kinds.forEach { patterns[it] = part(it) }
+        val arr = sections.map { (kind, bars) ->
+            val k = if (kind in kinds) kind else "verse"
+            Section(k.replaceFirstChar { it.uppercase() }, k, max(1, bars / 4))
+        }
+        val chordPreset = when (style) { "dance" -> "stab"; "chant" -> "pad"; "calm" -> "pad"; else -> "keys" }
+        val inst = mutableMapOf(
+            "drums" to if (style == "dance") "909" else "tight", "bass" to if (style == "chant") "sub" else "pluck",
+            "chords" to chordPreset, "lead" to "bell", "arp" to "bell", "vocal" to "none",
+        )
+        return Song(title, "Learning song", bpm, keyName, 0.0, "A learning song with spoken lines over a ${KID_STYLES[style] ?: style} beat.", inst, patterns, arr)
+    }
 }

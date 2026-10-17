@@ -43,6 +43,8 @@ data class Entry(
     val id: String, val title: String, val genre: String, val bpm: Int, val key: String, val vocal: String,
     val seconds: Double, val created: Long, val updated: Long, val brief: String, val lyrics: String, val summary: String,
     val samples: List<String> = emptyList(),
+    /** Learning songs carry their lesson (lines, timing, quiz) as JSON. */
+    val lesson: String = "",
 )
 
 /** Songs live in app storage: <id>.json (song + details) and <id>.wav (the rendered audio). */
@@ -66,17 +68,20 @@ class Library(ctx: Context) {
         val song = parseSong(o.getJSONObject("song"))
         return Entry(
             id = id, title = song.title, genre = song.genre, bpm = song.bpm, key = song.key,
-            vocal = song.instruments["vocal"] ?: "none", seconds = song.seconds,
+            vocal = song.instruments["vocal"] ?: "none",
+            seconds = wav(id).length().let { if (it > 44) (it - 44) / (4.0 * SAMPLE_RATE) else song.seconds },
             created = m.optLong("created"), updated = m.optLong("updated"), brief = m.optString("brief"),
             lyrics = song.lyricsText(), summary = song.summary,
             samples = m.optJSONArray("samples")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
+            lesson = m.optJSONObject("lesson")?.toString() ?: "",
         ) to song
     }
 
-    fun save(id: String, song: Song, brief: String, created: Long, samples: List<String> = emptyList()): Entry {
+    fun save(id: String, song: Song, brief: String, created: Long, samples: List<String> = emptyList(), lesson: String = ""): Entry {
         val now = System.currentTimeMillis()
         val o = JSONObject()
-            .put("meta", JSONObject().put("id", id).put("created", created).put("updated", now).put("brief", brief).put("samples", org.json.JSONArray(samples)))
+            .put("meta", JSONObject().put("id", id).put("created", created).put("updated", now).put("brief", brief).put("samples", org.json.JSONArray(samples))
+                .apply { if (lesson.isNotEmpty()) put("lesson", JSONObject(lesson)) })
             .put("song", song.toJson())
         json(id).writeText(o.toString())
         return load(id)!!.first

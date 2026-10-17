@@ -22,14 +22,20 @@ class ClaudeClient {
         .callTimeout(12, TimeUnit.MINUTES)
         .build()
 
-    suspend fun complete(apiKey: String, model: String, prompt: String, maxTokens: Int = 32000, onChars: (Int) -> Unit = {}): String =
+    suspend fun complete(apiKey: String, model: String, prompt: String, maxTokens: Int = 32000, images: List<String> = emptyList(), onChars: (Int) -> Unit = {}): String =
         withContext(Dispatchers.IO) {
             if (apiKey.isBlank()) throw ClaudeException("Add your Anthropic API key in Settings first.")
             val body = JSONObject()
                 .put("model", model)
                 .put("max_tokens", maxTokens)
                 .put("stream", true)
-                .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content", prompt)))
+                .put("messages", JSONArray().put(JSONObject().put("role", "user").put("content",
+                    if (images.isEmpty()) prompt else JSONArray().apply {
+                        images.forEach { img ->
+                            put(JSONObject().put("type", "image").put("source", JSONObject().put("type", "base64").put("media_type", "image/jpeg").put("data", img)))
+                        }
+                        put(JSONObject().put("type", "text").put("text", prompt))
+                    })))
             val req = Request.Builder()
                 .url("https://api.anthropic.com/v1/messages")
                 .header("x-api-key", apiKey.trim())
