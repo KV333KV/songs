@@ -160,7 +160,8 @@ fun RecordButton(st: RecState, size: Int, onClick: () -> Unit) {
 
 @Composable
 fun SamplesScreen(state: Studio.State, controller: androidx.media3.session.MediaController?, onUse: (SampleMeta) -> Unit) {
-    val instantPrefs = remember { Prefs(LocalContext.current) }
+    val instantCtx = LocalContext.current
+    val instantPrefs = remember { Prefs(instantCtx) }
     /** One tap: compose and play a full track from the sample alone. */
     fun instant(m: SampleMeta) {
         controller?.let { requestCompose(it, starterBrief(m), instantPrefs.voices, instantPrefs.length, listOf(m.id)) }
