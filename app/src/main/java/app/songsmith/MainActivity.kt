@@ -238,7 +238,7 @@ fun App(controller: MediaController?) {
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (tab) {
                 0 -> CreateScreen(controller, state, onHelp = { showTour = true }) { driving = true }
-                1 -> SamplesScreen(state) { m -> SampleHandoff.pending.value = m; tab = 0 }
+                1 -> SamplesScreen(state, controller) { m -> SampleHandoff.pending.value = m; tab = 0 }
                 2 -> LibraryScreen(controller, state)
                 4 -> LearnScreen(controller, state)
                 else -> SettingsScreen { showTour = true }
@@ -286,7 +286,10 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onHelp: () -
 
     fun go(text: String = brief) {
         val c = controller ?: return
-        val full = listOf(text.trim(), if (picked.isNotEmpty()) "Style: ${picked.joinToString(", ")}." else "").filter { it.isNotEmpty() }.joinToString("\n")
+        val chosen = sampleList.filter { it.id in pickedSamples }
+        // A sample on its own is enough: describe the track from the sample when nothing is typed.
+        val base = text.trim().ifEmpty { chosen.firstOrNull()?.let { starterBrief(it) } ?: "" }
+        val full = listOf(base, if (picked.isNotEmpty()) "Style: ${picked.joinToString(", ")}." else "").filter { it.isNotEmpty() }.joinToString("\n")
         if (full.isEmpty()) return
         prefs.voices = voices; prefs.length = length
         requestCompose(c, full, voices, length, sampleList.filter { it.id in pickedSamples }.map { it.id })

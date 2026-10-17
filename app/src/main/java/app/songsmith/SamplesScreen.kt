@@ -159,7 +159,12 @@ fun RecordButton(st: RecState, size: Int, onClick: () -> Unit) {
 }
 
 @Composable
-fun SamplesScreen(state: Studio.State, onUse: (SampleMeta) -> Unit) {
+fun SamplesScreen(state: Studio.State, controller: androidx.media3.session.MediaController?, onUse: (SampleMeta) -> Unit) {
+    val instantPrefs = remember { Prefs(LocalContext.current) }
+    /** One tap: compose and play a full track from the sample alone. */
+    fun instant(m: SampleMeta) {
+        controller?.let { requestCompose(it, starterBrief(m), instantPrefs.voices, instantPrefs.length, listOf(m.id)) }
+    }
     val ctx = LocalContext.current
     val store = remember { SampleStore(ctx) }
     val scope = rememberCoroutineScope()
@@ -199,6 +204,7 @@ fun SamplesScreen(state: Studio.State, onUse: (SampleMeta) -> Unit) {
             OutlinedButton(onClick = { importer.launch(arrayOf("audio/*")) }, enabled = !rec.recording) { Text("Import an audio file instead") }
         }
         if (message.isNotEmpty()) Text(message, color = MaterialTheme.colorScheme.error)
+        StatusCard(state)
 
         draft?.let { pcm ->
             SampleEditor(pcm,
@@ -216,8 +222,12 @@ fun SamplesScreen(state: Studio.State, onUse: (SampleMeta) -> Unit) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("“${m.name}” is saved", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
                     Text(listOfNotNull(SAMPLE_ROLE_LABEL[m.role], m.bpm?.let { "≈$it BPM" }, m.key).joinToString(" · "), fontSize = 13.sp)
-                    Button(onClick = { onUse(m); justSaved = null }, modifier = Modifier.fillMaxWidth().height(54.dp)) {
-                        Text("Make a track with this sample", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    Button(onClick = { instant(m); justSaved = null }, enabled = controller != null && !state.busy, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+                        Text("Make a track now", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    }
+                    Text("Composes and plays a full track from this sample alone. No typing needed.", fontSize = 12.sp)
+                    OutlinedButton(onClick = { onUse(m); justSaved = null }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Customise first (add ideas and styles)")
                     }
                     TextButton(onClick = { justSaved = null }) { Text("Record another instead") }
                 }
@@ -226,7 +236,7 @@ fun SamplesScreen(state: Studio.State, onUse: (SampleMeta) -> Unit) {
 
         Text("Your samples", fontWeight = FontWeight.Bold, fontSize = 20.sp)
         if (list.isEmpty()) Text("Nothing saved yet. Recorded snippets show up here and on the Create screen.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        list.forEach { m -> SampleRow(m, store, { onUse(m) }) { list = store.list(); Studio.libraryChanged() } }
+        list.forEach { m -> SampleRow(m, store, { onUse(m) }, { instant(m) }, controller != null && !state.busy) { list = store.list(); Studio.libraryChanged() } }
         Text("Tip: hold the phone near the speaker and keep the room quiet. Snippets from other people's music play in the app but are always left out of downloads, unless you switch on “my own sound”.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -292,7 +302,7 @@ fun SampleEditor(pcm: FloatArray, onSave: (FloatArray, String, String, String, B
 }
 
 @Composable
-fun SampleRow(m: SampleMeta, store: SampleStore, onUse: () -> Unit, onChanged: () -> Unit) {
+fun SampleRow(m: SampleMeta, store: SampleStore, onUse: () -> Unit, onInstant: () -> Unit, canCompose: Boolean, onChanged: () -> Unit) {
     var armed by remember { mutableStateOf(false) }
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -302,7 +312,10 @@ fun SampleRow(m: SampleMeta, store: SampleStore, onUse: () -> Unit, onChanged: (
                 Text(m.name, fontWeight = FontWeight.Bold)
                 Text(listOfNotNull(SAMPLE_ROLE_LABEL[m.role], "%.1f s".format(m.seconds), m.bpm?.let { "≈$it BPM" }, m.key).joinToString(" · "),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = onUse, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("Use in a track →", fontWeight = FontWeight.Bold) }
+                Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    TextButton(onClick = onInstant, enabled = canCompose, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("Make a track now", fontWeight = FontWeight.Bold) }
+                    TextButton(onClick = onUse, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("Customise →") }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(m.cleared, { store.setCleared(m.id, it); onChanged() }, modifier = Modifier.padding(end = 8.dp))
                     Text(if (m.cleared) "My own sound: included in downloads" else "Left out of downloads", fontSize = 12.sp)
