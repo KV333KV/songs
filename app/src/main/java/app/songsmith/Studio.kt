@@ -38,6 +38,9 @@ class Prefs(ctx: Context) {
     var autoUpdateCheck: Boolean
         get() = sp.getBoolean("autoUpdateCheck", true)
         set(v) = sp.edit().putBoolean("autoUpdateCheck", v).apply()
+    var seenTour: Boolean
+        get() = sp.getBoolean("seenTour", false)
+        set(v) = sp.edit().putBoolean("seenTour", v).apply()
     var autoCompose: Boolean
         get() = sp.getBoolean("autoCompose", true)
         set(v) = sp.edit().putBoolean("autoCompose", v).apply()

@@ -209,6 +209,9 @@ fun App(controller: MediaController?) {
     val appCtx = LocalContext.current
     LaunchedEffect(Unit) { Updates.autoCheck(appCtx) }
 
+    val tourPrefs = remember { Prefs(appCtx) }
+    var showTour by remember { mutableStateOf(!tourPrefs.seenTour) }
+    if (showTour) { HowItWorks { showTour = false; tourPrefs.seenTour = true }; return }
     if (driving) { DrivingScreen(controller, state) { driving = false }; return }
 
     Scaffold(
@@ -227,11 +230,11 @@ fun App(controller: MediaController?) {
     ) { pad ->
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (tab) {
-                0 -> CreateScreen(controller, state) { driving = true }
+                0 -> CreateScreen(controller, state, onHelp = { showTour = true }) { driving = true }
                 1 -> SamplesScreen(state) { m -> SampleHandoff.pending.value = m; tab = 0 }
                 2 -> LibraryScreen(controller, state)
                 4 -> LearnScreen(controller, state)
-                else -> SettingsScreen()
+                else -> SettingsScreen { showTour = true }
             }
         }
     }
@@ -253,7 +256,7 @@ fun StatusCard(state: Studio.State) {
 }
 
 @Composable
-fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: () -> Unit) {
+fun CreateScreen(controller: MediaController?, state: Studio.State, onHelp: () -> Unit = {}, onDriving: () -> Unit) {
     val ctx = LocalContext.current
     val prefs = remember { Prefs(ctx) }
     var brief by remember { mutableStateOf("") }
@@ -287,7 +290,12 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
     }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        Text("What are we\nmaking today?", fontSize = 34.sp, lineHeight = 36.sp, fontWeight = FontWeight.ExtraBold)
+        Row(verticalAlignment = Alignment.Top) {
+            Text("What are we\nmaking today?", fontSize = 34.sp, lineHeight = 36.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+            OutlinedButton(onClick = onHelp, shape = CircleShape, contentPadding = PaddingValues(0.dp), modifier = Modifier.size(44.dp)) {
+                Text("?", fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+            }
+        }
 
         Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
             Box {
@@ -588,7 +596,7 @@ fun SongCard(e: Entry, expanded: Boolean, controller: MediaController?, busy: Bo
 }
 
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(onHelp: () -> Unit = {}) {
     val ctx = LocalContext.current
     val prefs = remember { Prefs(ctx) }
     val scope = rememberCoroutineScope()
@@ -600,6 +608,7 @@ fun SettingsScreen() {
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
+        OutlinedButton(onClick = onHelp, modifier = Modifier.fillMaxWidth()) { Text("How Songsmith works (flashcards)") }
         UpdateSection()
         val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
         Text("Songsmith version $version", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
