@@ -100,6 +100,9 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.launch
 
+/** Lets a notification ask the app to open a particular tab. */
+val OpenTab = kotlinx.coroutines.flow.MutableStateFlow<Int?>(null)
+
 private val Coral = Color(0xFFFF6B70)
 private val Ink = Color(0xFF0E1116)
 
@@ -114,11 +117,13 @@ class MainActivity : ComponentActivity() {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
         pendingQuery = queryFrom(intent)
+        if (intent?.getBooleanExtra("openInbox", false) == true) OpenTab.value = 3
         setContent { SongsmithTheme { App(controller) } }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.getBooleanExtra("openInbox", false)) OpenTab.value = 3
         queryFrom(intent)?.let { q -> controller?.let { ask(it, q) } ?: run { pendingQuery = q } }
     }
 
@@ -211,6 +216,8 @@ fun App(controller: MediaController?) {
 
     val tourPrefs = remember { Prefs(appCtx) }
     var showTour by remember { mutableStateOf(!tourPrefs.seenTour) }
+    val openTab by OpenTab.collectAsStateWithLifecycle()
+    LaunchedEffect(openTab) { openTab?.let { tab = it; OpenTab.value = null } }
     if (showTour) { HowItWorks { showTour = false; tourPrefs.seenTour = true }; return }
     if (driving) { DrivingScreen(controller, state) { driving = false }; return }
 
@@ -610,6 +617,7 @@ fun SettingsScreen(onHelp: () -> Unit = {}) {
         Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
         OutlinedButton(onClick = onHelp, modifier = Modifier.fillMaxWidth()) { Text("How Songsmith works (flashcards)") }
         SuggestionBox()
+        CreatorInbox()
         UpdateSection()
         val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
         Text("Songsmith version $version", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
