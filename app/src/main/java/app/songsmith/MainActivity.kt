@@ -1,0 +1,506 @@
+@file:OptIn(ExperimentalMaterial3Api::class)
+
+package app.songsmith
+
+import android.Manifest
+import android.app.SearchManager
+import android.content.ComponentName
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+import android.provider.MediaStore
+import android.speech.RecognizerIntent
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.MoreExecutors
+import kotlinx.coroutines.launch
+
+private val Coral = Color(0xFFFF6B70)
+private val Ink = Color(0xFF0E1116)
+
+class MainActivity : ComponentActivity() {
+    private var controller by mutableStateOf<MediaController?>(null)
+    private var pendingQuery: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+        pendingQuery = queryFrom(intent)
+        setContent { SongsmithTheme { App(controller) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        queryFrom(intent)?.let { q -> controller?.let { ask(it, q) } ?: run { pendingQuery = q } }
+    }
+
+    private fun queryFrom(i: Intent?): String? =
+        if (i?.action == MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) (i.getStringExtra(SearchManager.QUERY) ?: "") else null
+
+    override fun onStart() {
+        super.onStart()
+        val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
+        val future = MediaController.Builder(this, token).buildAsync()
+        future.addListener({
+            val c = runCatching { future.get() }.getOrNull() ?: return@addListener
+            controller = c
+            pendingQuery?.let { ask(c, it); pendingQuery = null }
+        }, MoreExecutors.directExecutor())
+    }
+
+    override fun onStop() {
+        controller?.release()
+        controller = null
+        super.onStop()
+    }
+}
+
+/* ---------------- talking to the service ---------------- */
+
+fun ask(c: MediaController, query: String) {
+    c.setMediaItem(MediaItem.Builder().setMediaId("ask:$query").build())
+    c.prepare(); c.play()
+}
+
+fun requestCompose(c: MediaController, brief: String, voices: Voices, length: String) {
+    val extras = Bundle().apply {
+        putString(PlaybackService.EXTRA_BRIEF, brief)
+        putString(PlaybackService.EXTRA_VOICES, voices.combo())
+        putString(PlaybackService.EXTRA_LENGTH, length)
+    }
+    c.setMediaItem(MediaItem.Builder().setMediaId("compose").setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(extras).build()).build())
+    c.prepare(); c.play()
+}
+
+fun requestRefine(c: MediaController, id: String, change: String) {
+    val extras = Bundle().apply { putString(PlaybackService.EXTRA_CHANGE, change) }
+    c.setMediaItem(MediaItem.Builder().setMediaId("refine:$id").setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(extras).build()).build())
+    c.prepare(); c.play()
+}
+
+fun playSong(c: MediaController, id: String) {
+    c.setMediaItem(MediaItem.Builder().setMediaId("song:$id").build())
+    c.prepare(); c.play()
+}
+
+/* ---------------- UI ---------------- */
+
+@Composable
+fun SongsmithTheme(content: @Composable () -> Unit) {
+    val dark = isSystemInDarkTheme()
+    val scheme = if (dark) darkColorScheme(
+        primary = Coral, onPrimary = Color(0xFF1A0607), background = Ink, surface = Color(0xFF171B22),
+        surfaceVariant = Color(0xFF222833), onSurface = Color(0xFFE9EDF3), onSurfaceVariant = Color(0xFF98A2B3), secondary = Color(0xFFF27AB8),
+    ) else lightColorScheme(
+        primary = Color(0xFFE5484D), onPrimary = Color.White, background = Color(0xFFEDF0F4), surface = Color.White,
+        surfaceVariant = Color(0xFFE2E7EE), onSurface = Color(0xFF121823), onSurfaceVariant = Color(0xFF5B6576), secondary = Color(0xFFC2367F),
+    )
+    MaterialTheme(colorScheme = scheme, content = content)
+}
+
+@Composable
+fun rememberDictation(prompt: String, onText: (String) -> Unit): () -> Unit {
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        res.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(onText)
+    }
+    val ctx = LocalContext.current
+    return {
+        val i = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_PROMPT, prompt)
+        runCatching { launcher.launch(i) }
+    }
+}
+
+@Composable
+fun App(controller: MediaController?) {
+    var tab by remember { mutableStateOf(0) }
+    var driving by remember { mutableStateOf(false) }
+    val state by Studio.state.collectAsStateWithLifecycle()
+
+    if (driving) { DrivingScreen(controller, state) { driving = false }; return }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        bottomBar = {
+            Column {
+                NowPlaying(controller)
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                    listOf(Triple("Create", R.drawable.ic_spark, 0), Triple("Library", R.drawable.ic_library, 1), Triple("Settings", R.drawable.ic_settings, 2)).forEach { (label, icon, i) ->
+                        NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Icon(painterResource(icon), null) }, label = { Text(label) })
+                    }
+                }
+            }
+        },
+    ) { pad ->
+        Box(Modifier.padding(pad).fillMaxSize()) {
+            when (tab) {
+                0 -> CreateScreen(controller, state) { driving = true }
+                1 -> LibraryScreen(controller, state)
+                else -> SettingsScreen()
+            }
+        }
+    }
+}
+
+@Composable
+fun StatusCard(state: Studio.State) {
+    AnimatedVisibility(visible = state.message.isNotEmpty()) {
+        Card(colors = CardDefaults.cardColors(containerColor = if (state.error) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant), shape = RoundedCornerShape(16.dp)) {
+            Column(Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(state.message, fontWeight = FontWeight.SemiBold)
+                if (state.busy) {
+                    val p = state.progress
+                    if (p != null) LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth()) else LinearProgressIndicator(Modifier.fillMaxWidth())
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: () -> Unit) {
+    val ctx = LocalContext.current
+    val prefs = remember { Prefs(ctx) }
+    var brief by remember { mutableStateOf("") }
+    var voices by remember { mutableStateOf(prefs.voices) }
+    var length by remember { mutableStateOf(prefs.length) }
+    val styles = listOf("Amapiano", "Afro-pop", "Gospel", "R&B", "Lo-fi", "Deep house", "Pop ballad", "Hip hop", "Cinematic", "Acoustic")
+    var picked by remember { mutableStateOf(setOf<String>()) }
+
+    fun go(text: String = brief) {
+        val c = controller ?: return
+        val full = listOf(text.trim(), if (picked.isNotEmpty()) "Style: ${picked.joinToString(", ")}." else "").filter { it.isNotEmpty() }.joinToString("\n")
+        if (full.isEmpty()) return
+        prefs.voices = voices; prefs.length = length
+        requestCompose(c, full, voices, length)
+    }
+    val dictate = rememberDictation("Describe your song") { said ->
+        brief = if (brief.isBlank()) said else "$brief $said"
+        if (prefs.autoCompose) go(brief)
+    }
+
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        Text("What are we\nmaking today?", fontSize = 34.sp, lineHeight = 36.sp, fontWeight = FontWeight.ExtraBold)
+
+        Surface(shape = RoundedCornerShape(22.dp), color = MaterialTheme.colorScheme.surface, tonalElevation = 1.dp) {
+            Box {
+                OutlinedTextField(
+                    value = brief, onValueChange = { brief = it },
+                    placeholder = { Text("A feel-good amapiano song about driving home on a Friday…") },
+                    modifier = Modifier.fillMaxWidth().height(150.dp).padding(end = 64.dp),
+                    shape = RoundedCornerShape(22.dp),
+                )
+                FilledIconButton(
+                    onClick = dictate, modifier = Modifier.align(Alignment.BottomEnd).padding(10.dp).size(54.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary),
+                ) { Icon(painterResource(R.drawable.ic_mic), "Speak your idea", tint = MaterialTheme.colorScheme.onPrimary) }
+            }
+        }
+
+        Text("Who sings?", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            VoiceTile("Male", "Low, warm", voices.male, Modifier.weight(1f)) { voices = voices.copy(male = !voices.male) }
+            VoiceTile("Female", "Bright, high", voices.female, Modifier.weight(1f)) { voices = voices.copy(female = !voices.female) }
+            VoiceTile("Choir", "Harmonies", voices.choir, Modifier.weight(1f)) { voices = voices.copy(choir = !voices.choir) }
+        }
+        Text(if (voices.combo() == "none") "Instrumental, no singers" else "${voices.describe()} with lyrics", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+
+        Text("Style", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(styles) { s -> FilterChip(selected = s in picked, onClick = { picked = if (s in picked) picked - s else picked + s }, label = { Text(s) }) }
+        }
+
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            listOf("short" to "Sketch · 1 min", "full" to "Full song · 2.5 min").forEachIndexed { i, (v, label) ->
+                SegmentedButton(selected = length == v, onClick = { length = v }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+            }
+        }
+
+        Button(
+            onClick = { go() }, enabled = controller != null && !state.busy,
+            modifier = Modifier.fillMaxWidth().height(60.dp), shape = RoundedCornerShape(18.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onSurface, contentColor = MaterialTheme.colorScheme.background),
+        ) {
+            Icon(painterResource(R.drawable.ic_spark), null); Spacer(Modifier.width(10.dp))
+            Text(if (state.busy) "Composing…" else "Compose & play", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+        }
+        StatusCard(state)
+
+        Card(onClick = onDriving, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Icon(painterResource(R.drawable.ic_car), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Driving mode", fontWeight = FontWeight.Bold)
+                    Text("One giant button. Or just say “Hey Google, play a chill amapiano song on Songsmith”.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+fun VoiceTile(title: String, sub: String, on: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.secondary
+    Surface(
+        onClick = onClick, modifier = modifier, shape = RoundedCornerShape(18.dp),
+        color = if (on) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surface,
+        border = BorderStroke(2.dp, if (on) accent else MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(Modifier.padding(vertical = 14.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(34.dp).clip(CircleShape).background(if (on) accent else MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+                Text(title.take(1), color = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.ExtraBold)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(title, fontWeight = FontWeight.Bold)
+            Text(sub, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+fun DrivingScreen(controller: MediaController?, state: Studio.State, onExit: () -> Unit) {
+    val ctx = LocalContext.current
+    val prefs = remember { Prefs(ctx) }
+    val listen = rememberDictation("What should I make?") { said -> controller?.let { ask(it, said) } }
+    Column(
+        Modifier.fillMaxSize().background(Ink).padding(28.dp),
+        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(Modifier.fillMaxWidth().padding(top = 24.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text("Driving mode", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            TextButton(onClick = onExit) { Text("Exit", color = Coral, fontSize = 18.sp) }
+        }
+        Box(
+            Modifier.size(240.dp).clip(CircleShape).background(Coral).clickable(enabled = controller != null) { listen() },
+            contentAlignment = Alignment.Center,
+        ) { Icon(painterResource(R.drawable.ic_mic), "Talk", tint = Ink, modifier = Modifier.size(96.dp)) }
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                if (state.message.isNotEmpty()) state.message else "Tap and say what you want, like “an upbeat gospel song with a choir” or “make it slower”.",
+                color = Color.White, fontSize = 20.sp, lineHeight = 26.sp,
+            )
+            Text("Default singers: ${prefs.voices.describe()}", color = Color(0xFF98A2B3))
+        }
+    }
+}
+
+@Composable
+fun NowPlaying(controller: MediaController?) {
+    var title by remember { mutableStateOf("") }
+    var playing by remember { mutableStateOf(false) }
+    DisposableEffect(controller) {
+        val c = controller
+        val l = object : Player.Listener {
+            override fun onEvents(player: Player, events: Player.Events) {
+                title = player.mediaMetadata.title?.toString() ?: ""
+                playing = player.isPlaying
+            }
+        }
+        c?.addListener(l)
+        title = c?.mediaMetadata?.title?.toString() ?: ""; playing = c?.isPlaying ?: false
+        onDispose { c?.removeListener(l) }
+    }
+    if (controller == null || title.isEmpty()) return
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            FilledIconButton(onClick = { if (controller.isPlaying) controller.pause() else controller.play() }) {
+                Icon(painterResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play), if (playing) "Pause" else "Play")
+            }
+            Spacer(Modifier.width(12.dp))
+            Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+fun LibraryScreen(controller: MediaController?, state: Studio.State) {
+    val ctx = LocalContext.current
+    val lib = remember { Library(ctx) }
+    var entries by remember { mutableStateOf(listOf<Entry>()) }
+    var openId by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(state.libraryVersion) { entries = lib.list() }
+
+    LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item { Text("Your songs", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold) }
+        item { StatusCard(state) }
+        if (entries.isEmpty()) item {
+            Text("No songs yet. Compose one, or say “Hey Google, play an upbeat gospel song on Songsmith”.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        items(entries, key = { it.id }) { e ->
+            SongCard(e, openId == e.id, controller, state.busy,
+                onToggle = { openId = if (openId == e.id) null else e.id },
+                onDelete = { lib.delete(e.id); entries = lib.list(); Studio.libraryChanged() })
+        }
+    }
+}
+
+@Composable
+fun SongCard(e: Entry, expanded: Boolean, controller: MediaController?, busy: Boolean, onToggle: () -> Unit, onDelete: () -> Unit) {
+    var change by remember { mutableStateOf("") }
+    var armed by remember { mutableStateOf(false) }
+    val dictate = rememberDictation("What should change?") { change = it }
+    Card(onClick = onToggle, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(46.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.secondary), contentAlignment = Alignment.Center) {
+                    Text(e.title.take(1), color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(e.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val mins = e.seconds.toInt()
+                    Text(listOf(e.genre, "${e.bpm} BPM", VOCAL_LABEL[e.vocal] ?: "", "%d:%02d".format(mins / 60, mins % 60)).filter { it.isNotBlank() }.joinToString(" · "),
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                FilledIconButton(onClick = { controller?.let { playSong(it, e.id) } }, enabled = controller != null) {
+                    Icon(painterResource(R.drawable.ic_play), "Play ${e.title}")
+                }
+            }
+            if (expanded) {
+                if (e.summary.isNotBlank()) Text(e.summary, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (e.lyrics.isNotBlank()) Text(e.lyrics, fontSize = 14.sp)
+                Box {
+                    OutlinedTextField(change, { change = it }, placeholder = { Text("Change it: add a choir, make it slower…") },
+                        modifier = Modifier.fillMaxWidth().padding(end = 56.dp), shape = RoundedCornerShape(14.dp))
+                    FilledIconButton(onClick = dictate, modifier = Modifier.align(Alignment.CenterEnd)) { Icon(painterResource(R.drawable.ic_mic), "Speak a change") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = { controller?.let { requestRefine(it, e.id, change.trim()); change = "" } }, enabled = change.isNotBlank() && !busy && controller != null) { Text("Apply change") }
+                    OutlinedButton(onClick = { if (armed) onDelete() else armed = true }) { Text(if (armed) "Tap again to delete" else "Delete") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen() {
+    val ctx = LocalContext.current
+    val prefs = remember { Prefs(ctx) }
+    val scope = rememberCoroutineScope()
+    var key by remember { mutableStateOf(prefs.apiKey) }
+    var model by remember { mutableStateOf(prefs.model) }
+    var auto by remember { mutableStateOf(prefs.autoCompose) }
+    var test by remember { mutableStateOf("") }
+
+    Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
+        OutlinedTextField(key, { key = it; prefs.apiKey = it }, label = { Text("Anthropic API key") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
+        Text("Create one at console.anthropic.com. Each song is billed to that account. The key stays on this phone.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(model, { model = it; prefs.model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = {
+                test = "Testing…"
+                scope.launch {
+                    test = runCatching { ClaudeClient().complete(prefs.apiKey, prefs.model, "Reply with the single word OK.", maxTokens = 16); "Connected. You're ready to compose." }
+                        .getOrElse { it.message ?: "That didn't work." }
+                }
+            }) { Text("Test connection") }
+            Text(test, fontSize = 13.sp, modifier = Modifier.weight(1f))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Compose as soon as I stop talking", fontWeight = FontWeight.SemiBold)
+                Text("Skips the Compose button after you dictate.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(auto, { auto = it; prefs.autoCompose = it })
+        }
+        Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Using it in the car", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("1. On your phone open Android Auto settings, tap Version ten times to unlock developer settings.\n" +
+                    "2. In the ⋮ menu open Developer settings and turn on Unknown sources.\n" +
+                    "3. In Android Auto's Customise launcher, make sure Songsmith is ticked.\n" +
+                    "4. In the car say: “Hey Google, play a chill amapiano song with a female singer on Songsmith.”\n" +
+                    "5. Change it with: “Hey Google, play make it slower on Songsmith.” Or tap a quick idea on the Songsmith screen.",
+                    fontSize = 14.sp, lineHeight = 21.sp)
+            }
+        }
+    }
+}
