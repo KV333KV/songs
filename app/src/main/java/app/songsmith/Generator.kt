@@ -337,7 +337,7 @@ object Generator {
         kinds.forEach { patterns[it] = part(it) }
         val arr = sections.map { (kind, bars) ->
             val k = if (kind in kinds) kind else "verse"
-            Section(k.replaceFirstChar { it.uppercase() }, k, max(1, bars / 4))
+            Section(k.replaceFirstChar { it.uppercase() }, k, max(1, bars / 4), "")
         }
         val chordPreset = when (style) { "dance" -> "stab"; "chant" -> "pad"; "calm" -> "pad"; else -> "keys" }
         val inst = mutableMapOf(
