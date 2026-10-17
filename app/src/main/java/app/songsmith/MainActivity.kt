@@ -228,7 +228,7 @@ fun App(controller: MediaController?) {
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (tab) {
                 0 -> CreateScreen(controller, state) { driving = true }
-                1 -> SamplesScreen(state)
+                1 -> SamplesScreen(state) { m -> SampleHandoff.pending.value = m; tab = 0 }
                 2 -> LibraryScreen(controller, state)
                 4 -> LearnScreen(controller, state)
                 else -> SettingsScreen()
@@ -263,6 +263,16 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
     var picked by remember { mutableStateOf(setOf<String>()) }
     val sampleList = remember(state.libraryVersion) { SampleStore(ctx).list() }
     var pickedSamples by remember { mutableStateOf(setOf<String>()) }
+    var featured by remember { mutableStateOf<SampleMeta?>(null) }
+    val handoff by SampleHandoff.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(handoff) {
+        handoff?.let { m ->
+            pickedSamples = pickedSamples + m.id
+            featured = m
+            if (brief.isBlank()) brief = starterBrief(m)
+            SampleHandoff.pending.value = null
+        }
+    }
 
     fun go(text: String = brief) {
         val c = controller ?: return
@@ -301,6 +311,29 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
             VoiceTile("Choir", "Harmonies", voices.choir, Modifier.weight(1f)) { voices = voices.copy(choir = !voices.choir) }
         }
         Text(if (voices.combo() == "none") "Instrumental, no vocals" else "${voices.describe()} vocals added", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+
+        featured?.let { m ->
+            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = .14f))) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Built around your sample", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(m.name, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        }
+                        TextButton(onClick = { featured = null; pickedSamples = pickedSamples - m.id }) { Text("Remove") }
+                    }
+                    Text("Tap ideas to add them to your description:", fontSize = 13.sp)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(amplifyIdeas(m)) { (label, sentence) ->
+                            val used = brief.contains(sentence)
+                            FilterChip(selected = used, onClick = {
+                                brief = if (used) brief.replace(sentence, "").replace("  ", " ").trim() else listOf(brief.trim(), sentence).filter { it.isNotEmpty() }.joinToString(" ")
+                            }, label = { Text(label) })
+                        }
+                    }
+                }
+            }
+        }
 
         Text("Style", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -352,3 +352,51 @@ fun analyze(x: FloatArray, sr: Int): Analysis {
     }
     return Analysis(bpm, key)
 }
+
+/* ---------------- handing a sample to the Create screen ---------------- */
+
+/** A sample the user wants to build a track around, passed from Samples to Create. */
+object SampleHandoff {
+    val pending = kotlinx.coroutines.flow.MutableStateFlow<SampleMeta?>(null)
+}
+
+/** A ready-made opening line for the description. */
+fun starterBrief(m: SampleMeta): String {
+    val tempo = m.bpm?.let { " at about $it BPM" } ?: ""
+    return when (m.role) {
+        "loop" -> "A high-energy track built around my sample “${m.name}” as the main groove$tempo."
+        "texture" -> "A melancholic, high-energy track with my sample “${m.name}” as the atmosphere."
+        else -> "A high-energy track with my sample “${m.name}” chopped up as the hook."
+    }
+}
+
+/** Tap-to-add ideas that suit this sample, each written as a sentence for the description. */
+fun amplifyIdeas(m: SampleMeta): List<Pair<String, String>> {
+    val key = m.key?.let { " in $it" } ?: ""
+    val byRole = when (m.role) {
+        "loop" -> listOf(
+            "Rolling acid bass" to "Add a rolling 303 acid bassline$key that locks with the loop.",
+            "Drop it out, slam it back" to "Take the loop out in a long breakdown, then slam it back in for the drop.",
+            "Supersaw lead on top" to "Layer a soaring supersaw lead over the loop in the drops.",
+            "Filter build" to "Open a filter on the loop during the build so it rises into the drop.",
+        )
+        "texture" -> listOf(
+            "Atmospheric intro" to "Open the track with the sample as an atmosphere before the kick comes in.",
+            "Emotional breakdown" to "Put the sample under a long, emotional breakdown with a slow pad.",
+            "Fade into the build" to "Fade the sample in during the build so it lifts into the drop.",
+            "Pounding drop" to "Contrast it with a pounding four-to-the-floor drop.",
+        )
+        else -> listOf(
+            "Stutter before the drop" to "Chop the sample into fast 16th stutters right before each drop.",
+            "Call and answer" to "Use the sample as a call, with the lead answering it.",
+            "Pitch it into a riff" to "Pitch the sample up and down to play a riff$key.",
+            "Offbeat hits" to "Drop the sample on the offbeats of the main drop.",
+        )
+    }
+    return byRole + listOf(
+        "Faster, 140 BPM" to "Push it to 140 BPM with relentless energy.",
+        "Darker" to "Make it darker and more melancholic.",
+        "Huge breakdown" to "Add a huge breakdown and a snare-roll build before the final drop.",
+        "909 groove" to "Drive it with a pounding 909 kick, offbeat open hats and claps.",
+    )
+}

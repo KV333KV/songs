@@ -42,6 +42,7 @@ import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -158,13 +159,14 @@ fun RecordButton(st: RecState, size: Int, onClick: () -> Unit) {
 }
 
 @Composable
-fun SamplesScreen(state: Studio.State) {
+fun SamplesScreen(state: Studio.State, onUse: (SampleMeta) -> Unit) {
     val ctx = LocalContext.current
     val store = remember { SampleStore(ctx) }
     val scope = rememberCoroutineScope()
     var list by remember(state.libraryVersion) { mutableStateOf(store.list()) }
     var draft by remember { mutableStateOf<FloatArray?>(null) }
     var message by remember { mutableStateOf("") }
+    var justSaved by remember { mutableStateOf<SampleMeta?>(null) }
     val (rec, toggle) = rememberSnippetRecorder(onDone = { draft = it; message = "" }, onError = { message = it })
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) scope.launch {
@@ -175,8 +177,19 @@ fun SamplesScreen(state: Studio.State) {
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Samples", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
-        Text("Hear a moment you love? Record it: a riff, a vocal, a drum break, a synth line. Claude builds tracks around it.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Hear a moment you love? Turn it into a track in three steps.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("1" to "Record or import", "2" to "Trim & save", "3" to "Make a track").forEachIndexed { i, (n, label) ->
+                val active = when (i) { 0 -> draft == null && justSaved == null; 1 -> draft != null; else -> justSaved != null }
+                Surface(shape = RoundedCornerShape(12.dp), color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f)) {
+                    Column(Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(n, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
 
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             RecordButton(rec, 170, toggle)
@@ -191,16 +204,29 @@ fun SamplesScreen(state: Studio.State) {
             SampleEditor(pcm,
                 onSave = { clip, name, role, note, own ->
                     scope.launch {
-                        withContext(Dispatchers.Default) { store.save(clip, name, role, note, own) }
-                        draft = null; Preview.stop(); list = store.list(); Studio.libraryChanged()
+                        val saved = withContext(Dispatchers.Default) { store.save(clip, name, role, note, own) }
+                        draft = null; Preview.stop(); list = store.list(); Studio.libraryChanged(); justSaved = saved
                     }
                 },
                 onDiscard = { draft = null; Preview.stop() })
         }
 
+        justSaved?.let { m ->
+            Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("“${m.name}” is saved", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
+                    Text(listOfNotNull(SAMPLE_ROLE_LABEL[m.role], m.bpm?.let { "≈$it BPM" }, m.key).joinToString(" · "), fontSize = 13.sp)
+                    Button(onClick = { onUse(m); justSaved = null }, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+                        Text("Make a track with this sample", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
+                    }
+                    TextButton(onClick = { justSaved = null }) { Text("Record another instead") }
+                }
+            }
+        }
+
         Text("Your samples", fontWeight = FontWeight.Bold, fontSize = 20.sp)
         if (list.isEmpty()) Text("Nothing saved yet. Recorded snippets show up here and on the Create screen.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        list.forEach { m -> SampleRow(m, store) { list = store.list(); Studio.libraryChanged() } }
+        list.forEach { m -> SampleRow(m, store, { onUse(m) }) { list = store.list(); Studio.libraryChanged() } }
         Text("Tip: hold the phone near the speaker and keep the room quiet. Snippets from other people's music play in the app but are always left out of downloads, unless you switch on “my own sound”.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -266,7 +292,7 @@ fun SampleEditor(pcm: FloatArray, onSave: (FloatArray, String, String, String, B
 }
 
 @Composable
-fun SampleRow(m: SampleMeta, store: SampleStore, onChanged: () -> Unit) {
+fun SampleRow(m: SampleMeta, store: SampleStore, onUse: () -> Unit, onChanged: () -> Unit) {
     var armed by remember { mutableStateOf(false) }
     Card(shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -276,6 +302,7 @@ fun SampleRow(m: SampleMeta, store: SampleStore, onChanged: () -> Unit) {
                 Text(m.name, fontWeight = FontWeight.Bold)
                 Text(listOfNotNull(SAMPLE_ROLE_LABEL[m.role], "%.1f s".format(m.seconds), m.bpm?.let { "≈$it BPM" }, m.key).joinToString(" · "),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                TextButton(onClick = onUse, contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)) { Text("Use in a track →", fontWeight = FontWeight.Bold) }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(m.cleared, { store.setCleared(m.id, it); onChanged() }, modifier = Modifier.padding(end = 8.dp))
                     Text(if (m.cleared) "My own sound: included in downloads" else "Left out of downloads", fontSize = 12.sp)
