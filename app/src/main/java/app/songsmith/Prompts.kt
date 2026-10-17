@@ -6,20 +6,28 @@ object Prompts {
 Reply with ONLY one JSON object, no prose, in exactly this shape:
 {"title":"...","genre":"...","bpm":96,"key":"A minor","swing":0.12,
  "summary":"2-3 sentences describing the song and the choices you made",
- "instruments":{"drums":"tight","bass":"sub","chords":"keys","lead":"flute","arp":"bell","vocal":"female"},
+ "instruments":{"drums":"909","bass":"acid","chords":"stab","lead":"supersaw","arp":"acid","vocal":"none"},
  "patterns":{
    "intro":{"bars":4,"drums":[[0,"h",0.5]],"bass":[],"chords":[[0,57,4,0.6],[0,60,4,0.55],[0,64,4,0.55]],"lead":[],"arp":[],"vocal":[]},
-   "verse":{"bars":4,"drums":[[0,"k",1],[1,"s",0.9],[0.5,"h",0.6]],"bass":[[0,33,1.5,0.9]],"chords":[...],"lead":[],"arp":[],"vocal":[[0.5,69,0.5,0.8],[1,72,1,0.85]]}
+   "drop":{"bars":4,"drums":[[0,"k",1],[1,"k",1],[0.5,"o",0.6],[1,"c",0.9]],"bass":[[0,33,0.25,1],[0.25,45,0.25,0.5]],"chords":[...],"lead":[[0,76,1.5,0.9]],"arp":[],"vocal":[]}
  },
- "arrangement":[{"section":"Intro","pattern":"intro","repeat":1,"lyrics":""},{"section":"Verse 1","pattern":"verse","repeat":2,"lyrics":"line one\nline two"}]}
+ "arrangement":[{"section":"Intro","pattern":"intro","repeat":1,"lyrics":""},{"section":"Drop","pattern":"drop","repeat":4,"lyrics":""}]}
 
 Format rules:
 - 4/4 time. Positions are in quarter-note beats from the start of the pattern: 0 <= beat < bars*4. Use 0.5 for 8ths, 0.25 for 16ths.
 - Pitched notes are [beat, midi, lengthInBeats, velocity 0-1]. MIDI ranges: bass 28-55, chords 48-79, lead 60-91, arp 55-91, vocal as given below.
 - Drums are [beat, hit, velocity] where hit is one of "k" kick, "s" snare, "c" clap, "h" closed hat, "o" open hat, "t" tom.
-- Instrument presets (pick one each): drums tight|boom|lofi; bass sub|saw|pluck|808; chords pad|keys|organ|pluck|strings; lead saw|square|bell|flute|pluck; vocal none|female|male|duet|choir|female+choir|male+choir|duet+choir (who sings; keep what you were given unless the user asks to change it).
+- Instrument presets (pick one each): drums 909|tight|boom|lofi; bass acid|sub|saw|pluck|808; chords stab|pad|keys|organ|pluck|strings; lead supersaw|saw|square|bell|flute|pluck; arp acid|pluck|bell|saw; vocal none|female|male|duet|choir|female+choir|male+choir|duet+choir (who sings; keep what you were given unless the user asks to change it).
 - 2 to 8 patterns of 1 to 8 bars. The arrangement plays patterns in order, each "repeat" times (1-4). A pattern repeated with lyrics needs lyrics covering every repeat. Every pattern lists all six tracks; use [] for silent tracks.
 - swing is 0 (straight) to 0.4 (heavy shuffle).
+
+STYLE PRIORITY (the user's taste, apply unless their description clearly asks for something else):
+- High-energy electronic dance music: rave, techno, acid, trance, hard dance. Instrumental by default.
+- Melancholic, minor-key harmony (aeolian/phrygian, sad-but-euphoric trance progressions) carried by driving, relentless energy.
+- Tempo 128-150 BPM (hard techno/psy up to 160). swing 0. Four-on-the-floor kick on every beat, claps or snares on 2 and 4, offbeat open hats, 16th closed hats, rolling percussion.
+- Sounds: 909 kit, acid 303 basslines in 16ths with accents (vary velocity 0.4-1.0; accents open the filter) and octave jumps, rave stabs, supersaw trance leads and acid arps.
+- Structure in 8/16-bar phrases: DJ-friendly intro, build with risers and snare rolls (tom/snare 16ths ramping velocity), a long emotional breakdown with no kick, then a big drop; a second breakdown and final drop; an outro.
+- Never use jazz, R&B, soul, gospel, pop-ballad or singer-songwriter conventions: no swing, no jazzy extended chords, no brass/trumpet-like or flute leads, no lounge keys, unless explicitly asked.
 
 Musical rules:
 - Write real, idiomatic music for the genre. Chords: full voicings (3-5 notes struck on the same beat) with smooth voice leading and rhythm that suits the style.
@@ -58,8 +66,8 @@ Musical rules:
     }
 
     private fun lengthLine(length: String) =
-        if (length == "short") "Length: about 20-28 bars in total (a sketch around one minute)."
-        else "Length: about 56-80 bars in total (a full song of roughly 2.5-3 minutes at your tempo)."
+        if (length == "short") "Length: about 24-36 bars in total (a loop-length idea around one minute)."
+        else "Length: about 88-112 bars in total (a full track of roughly 3 minutes at dance tempo)."
 
     fun compose(brief: String, voices: Voices, length: String) = """
 You are an expert songwriter, composer and producer. Compose a complete original song for a small built-in synth engine with synthesized singers.

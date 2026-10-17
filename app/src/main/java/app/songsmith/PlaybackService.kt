@@ -63,12 +63,12 @@ class PlaybackService : MediaLibraryService() {
 
         /** One-tap ideas for the car screen. */
         val IDEA_LIST = listOf(
-            "Surprise me" to "Surprise me with a catchy, feel-good song in any genre.",
-            "Chill amapiano" to "A chill amapiano groove with log drum bass, warm keys and a sunset feel.",
-            "Uplifting gospel" to "An uplifting gospel song with a big choir chorus, organ and handclaps.",
-            "Late-night R&B" to "A smooth late-night R&B slow jam with lush chords.",
-            "Road-trip pop" to "An upbeat road-trip pop anthem with a singalong chorus.",
-            "Lo-fi focus" to "A mellow lo-fi hip hop beat for focus, dusty drums and jazzy keys.",
+            "Surprise me" to "Surprise me with a high-energy melancholic instrumental: techno, acid or trance.",
+            "Acid techno" to "Relentless acid techno at 140 BPM: squelchy 303 line with accents, pounding 909 kick, dark and hypnotic.",
+            "Melancholic trance" to "Euphoric but sad uplifting trance at 138 BPM: long emotional breakdown, supersaw drop.",
+            "Warehouse rave" to "A 4 a.m. warehouse rave track: hoover-style stabs, breakbeat fills, hard four-to-the-floor energy.",
+            "Hard techno" to "Hard techno at 150 BPM: distorted rumbling kick, industrial percussion, minimal dark stabs.",
+            "Psytrance" to "Driving psytrance at 145 BPM: rolling 16th bassline, acid arps, hypnotic build.",
         )
     }
 
@@ -163,7 +163,7 @@ class PlaybackService : MediaLibraryService() {
 
     /* ---------------- requests ---------------- */
 
-    private val refineWords = Regex("^(make (it|the)|change|add|remove|switch|swap|turn|slower|faster|more|less|give it|put)\\b", RegexOption.IGNORE_CASE)
+    private val refineWords = Regex("^(make (it|the)|change|add|remove|switch|swap|turn|slower|faster|harder|darker|heavier|deeper|longer|shorter|more|less|give it|put)\\b", RegexOption.IGNORE_CASE)
 
     /** A spoken request: "chill amapiano with a female singer", "make it slower", or nothing at all. */
     private suspend fun fromVoice(raw: String): MutableList<MediaItem> {
@@ -250,8 +250,7 @@ class PlaybackService : MediaLibraryService() {
             }
             id.startsWith("idea:") -> {
                 val idea = IDEA_LIST.getOrNull(id.removePrefix("idea:").toIntOrNull() ?: 0) ?: IDEA_LIST[0]
-                val v = if (idea.first == "Uplifting gospel") prefs.voices.copy(choir = true) else prefs.voices
-                startCompose(idea.second, v, prefs.length)
+                startCompose(idea.second, prefs.voices, prefs.length)
             }
             id.startsWith("ask:") -> fromVoice(id.removePrefix("ask:"))
             id == "compose" -> startCompose(

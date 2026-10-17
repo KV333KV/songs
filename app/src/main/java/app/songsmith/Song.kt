@@ -9,11 +9,11 @@ import kotlin.math.roundToInt
 val TRACKS = listOf("drums", "bass", "chords", "lead", "arp", "vocal")
 
 val PRESETS: Map<String, List<String>> = mapOf(
-    "drums" to listOf("tight", "boom", "lofi"),
-    "bass" to listOf("sub", "saw", "pluck", "808"),
-    "chords" to listOf("pad", "keys", "organ", "pluck", "strings"),
-    "lead" to listOf("saw", "square", "bell", "flute", "pluck"),
-    "arp" to listOf("pluck", "bell", "saw"),
+    "drums" to listOf("909", "tight", "boom", "lofi"),
+    "bass" to listOf("acid", "sub", "saw", "pluck", "808"),
+    "chords" to listOf("stab", "pad", "keys", "organ", "pluck", "strings"),
+    "lead" to listOf("supersaw", "saw", "square", "bell", "flute", "pluck"),
+    "arp" to listOf("acid", "pluck", "bell", "saw"),
     "vocal" to listOf("none", "female", "male", "duet", "choir", "female+choir", "male+choir", "duet+choir"),
 )
 

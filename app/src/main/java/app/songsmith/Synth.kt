@@ -25,11 +25,15 @@ class Synth(val sr: Int = 32000) {
     private class Vib(val rate: Double, val depth: Double)
     private class Preset(
         val osc: List<Osc>, val cut: Double, val q: Double = 0.7, val fenvFrom: Double = 0.0, val fenvTime: Double = 0.0,
-        val a: Double, val d: Double, val s: Double, val r: Double, val vol: Double, val vib: Vib? = null, val glide: Double = 0.0,
+        val a: Double, val d: Double, val s: Double, val r: Double, val vol: Double, val vib: Vib? = null, val glide: Double = 0.0, val accent: Boolean = false,
     )
 
     private val S = Wave.SINE; private val T = Wave.TRIANGLE; private val W = Wave.SAW; private val Q = Wave.SQUARE
     private val presets: Map<String, Preset> = mapOf(
+        "bass:acid" to Preset(listOf(Osc(W)), 260.0, 13.0, 3400.0, .07, a = .003, d = .18, s = .65, r = .05, vol = .2, accent = true),
+        "chords:stab" to Preset(listOf(Osc(W, det = -14.0), Osc(W, det = 14.0), Osc(Q, ratio = .5, gain = .35)), 1800.0, 1.2, 7000.0, .07, a = .002, d = .28, s = .12, r = .18, vol = .09),
+        "lead:supersaw" to Preset(listOf(Osc(W, det = -26.0), Osc(W, det = -12.0), Osc(W), Osc(W, det = 12.0), Osc(W, det = 26.0)), 5200.0, .9, a = .01, d = .4, s = .8, r = .3, vol = .06),
+        "arp:acid" to Preset(listOf(Osc(W)), 420.0, 12.0, 4800.0, .05, a = .002, d = .12, s = .3, r = .04, vol = .11, accent = true),
         "bass:sub" to Preset(listOf(Osc(S), Osc(T, gain = .25)), 900.0, a = .005, d = .3, s = .85, r = .08, vol = .55),
         "bass:saw" to Preset(listOf(Osc(W), Osc(W, det = 9.0)), 700.0, 3.0, 2400.0, .07, a = .004, d = .25, s = .7, r = .07, vol = .22),
         "bass:pluck" to Preset(listOf(Osc(W), Osc(S, gain = .8)), 420.0, 2.0, 3000.0, .05, a = .003, d = .35, s = .2, r = .08, vol = .32),
@@ -120,6 +124,7 @@ class Synth(val sr: Int = 32000) {
         val relLevel = if (rel < p.a) peak * rel / p.a else peak * p.s + (peak - peak * p.s) * exp(-(rel - p.a) / tauD)
         val ph = DoubleArray(p.osc.size) { rnd.nextDouble() }
         val lp = Biquad()
+        val fFrom = if (p.accent) p.cut + (p.fenvFrom - p.cut) * (.3 + .7 * vel * vel) else p.fenvFrom
         for (k in 0 until n) {
             val i = start + k
             if (i >= out.size) break
@@ -142,7 +147,7 @@ class Synth(val sr: Int = 32000) {
                 sum += wave(o.wave, ph[j], dt) * g
             }
             if (k % 32 == 0) {
-                val c = if (p.fenvFrom > 0) p.cut + (p.fenvFrom - p.cut) * exp(-t / p.fenvTime) else p.cut
+                val c = if (p.fenvFrom > 0) p.cut + (fFrom - p.cut) * exp(-t / p.fenvTime) else p.cut
                 lp.set('l', c, p.q, sr)
             }
             out.add(i, lp.process(sum) * env)
@@ -197,7 +202,8 @@ class Synth(val sr: Int = 32000) {
     private fun drum(out: FloatArray, start: Int, hit: Char, vel: Double, preset: String) {
         val boom = preset == "boom"
         val lofi = preset == "lofi"
-        val dec = when (hit) { 'k' -> if (boom) .6 else .32; 's' -> .22; 'c' -> .25; 'o' -> .32; 'h' -> if (lofi) .035 else .05; else -> .35 }
+        val t9 = preset == "909"
+        val dec = when (hit) { 'k' -> if (boom) .6 else if (t9) .45 else .32; 's' -> .22; 'c' -> .25; 'o' -> if (t9) .26 else .32; 'h' -> if (lofi) .035 else if (t9) .06 else .05; else -> .35 }
         val n = ((dec + .03) * sr).toInt()
         val bp = Biquad(); val hp = Biquad(); val click = Biquad()
         when (hit) {
@@ -215,9 +221,9 @@ class Synth(val sr: Int = 32000) {
             val noise = rnd.nextDouble() * 2 - 1
             val y = when (hit) {
                 'k' -> {
-                    val f = expRamp(if (boom) 125.0 else 155.0, if (boom) 41.0 else 50.0, t, if (boom) .12 else .08)
+                    val f = expRamp(if (boom) 125.0 else if (t9) 175.0 else 155.0, if (boom) 41.0 else if (t9) 47.0 else 50.0, t, if (boom) .12 else if (t9) .055 else .08)
                     ph += f / sr
-                    sin(2 * PI * ph) * expRamp(vel * 1.1, .0005, t, dec) + (if (t < .01) click.process(noise) * expRamp(vel * .25, .0005, t, .01) else 0.0)
+                    sin(2 * PI * ph) * expRamp(vel * (if (t9) 1.25 else 1.1), .0005, t, dec) + (if (t < .01) click.process(noise) * expRamp(vel * .25, .0005, t, .01) else 0.0)
                 }
                 's' -> {
                     val f = expRamp(200.0, 160.0, t, .1); ph += f / sr
@@ -232,7 +238,7 @@ class Synth(val sr: Int = 32000) {
                     }
                     bp.process(noise) * g
                 }
-                'h', 'o' -> hp.process(noise) * expRamp(vel * (if (lofi) .3 else .42), .0005, t, dec)
+                'h', 'o' -> hp.process(noise) * expRamp(vel * (if (lofi) .3 else if (t9) .5 else .42), .0005, t, dec)
                 else -> { val f = expRamp(175.0, 95.0, t, .2); ph += f / sr; sin(2 * PI * ph) * expRamp(vel * .8, .0005, t, .32) }
             }
             out[i] += y.toFloat()
@@ -280,7 +286,7 @@ class Synth(val sr: Int = 32000) {
         val l = FloatArray(len); val r = FloatArray(len); val rev = FloatArray(len); val drums = FloatArray(len)
         val outs = TRACKS.associateWith { t -> Out(l, r, rev, vol[t] ?: 0.7, send[t] ?: 0.0, pan[t] ?: 0.0) }
         val vs = Voices.of(song.instruments["vocal"] ?: "none")
-        val drumPreset = song.instruments["drums"] ?: "tight"
+        val drumPreset = song.instruments["drums"] ?: "909"
         events.forEachIndexed { idx, e ->
             val t = .05 + e.beat * spb + swingOffset(e.beat, song.swing, spb)
             val start = (t * sr).toInt()

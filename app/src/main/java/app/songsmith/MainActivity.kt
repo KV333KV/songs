@@ -248,7 +248,7 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
     var brief by remember { mutableStateOf("") }
     var voices by remember { mutableStateOf(prefs.voices) }
     var length by remember { mutableStateOf(prefs.length) }
-    val styles = listOf("Amapiano", "Afro-pop", "Gospel", "R&B", "Lo-fi", "Deep house", "Pop ballad", "Hip hop", "Cinematic", "Acoustic")
+    val styles = listOf("Acid techno", "Trance", "Rave", "Melodic techno", "Hard techno", "Psytrance", "Acid house", "Hard trance", "Breakbeat", "Drum & bass", "Dark & melancholic", "Euphoric")
     var picked by remember { mutableStateOf(setOf<String>()) }
 
     fun go(text: String = brief) {
@@ -270,7 +270,7 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
             Box {
                 OutlinedTextField(
                     value = brief, onValueChange = { brief = it },
-                    placeholder = { Text("A feel-good amapiano song about driving home on a Friday…") },
+                    placeholder = { Text("A melancholic acid trance track for a 4 a.m. warehouse, long breakdown, huge drop…") },
                     modifier = Modifier.fillMaxWidth().height(150.dp).padding(end = 64.dp),
                     shape = RoundedCornerShape(22.dp),
                 )
@@ -281,13 +281,13 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
             }
         }
 
-        Text("Who sings?", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        Text("Vocals (optional)", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             VoiceTile("Male", "Low, warm", voices.male, Modifier.weight(1f)) { voices = voices.copy(male = !voices.male) }
             VoiceTile("Female", "Bright, high", voices.female, Modifier.weight(1f)) { voices = voices.copy(female = !voices.female) }
             VoiceTile("Choir", "Harmonies", voices.choir, Modifier.weight(1f)) { voices = voices.copy(choir = !voices.choir) }
         }
-        Text(if (voices.combo() == "none") "Instrumental, no singers" else "${voices.describe()} with lyrics", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        Text(if (voices.combo() == "none") "Instrumental, no vocals" else "${voices.describe()} vocals added", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
 
         Text("Style", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -295,7 +295,7 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
         }
 
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf("short" to "Sketch · 1 min", "full" to "Full song · 2.5 min").forEachIndexed { i, (v, label) ->
+            listOf("short" to "Loop · 1 min", "full" to "Full track · 3 min").forEachIndexed { i, (v, label) ->
                 SegmentedButton(selected = length == v, onClick = { length = v }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
             }
         }
@@ -315,7 +315,7 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
                 Icon(painterResource(R.drawable.ic_car), null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Driving mode", fontWeight = FontWeight.Bold)
-                    Text("One giant button. Or just say “Hey Google, play a chill amapiano song on Songsmith”.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("One giant button. Or just say “Hey Google, play melancholic acid trance on Songsmith”.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
@@ -361,7 +361,7 @@ fun DrivingScreen(controller: MediaController?, state: Studio.State, onExit: () 
         ) { Icon(painterResource(R.drawable.ic_mic), "Talk", tint = Ink, modifier = Modifier.size(96.dp)) }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(
-                if (state.message.isNotEmpty()) state.message else "Tap and say what you want, like “an upbeat gospel song with a choir” or “make it slower”.",
+                if (state.message.isNotEmpty()) state.message else "Tap and say what you want, like “hard acid techno at 145” or “more energy”.",
                 color = Color.White, fontSize = 20.sp, lineHeight = 26.sp,
             )
             Text("Default singers: ${prefs.voices.describe()}", color = Color(0xFF98A2B3))
@@ -409,7 +409,7 @@ fun LibraryScreen(controller: MediaController?, state: Studio.State) {
         item { Text("Your songs", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold) }
         item { StatusCard(state) }
         if (entries.isEmpty()) item {
-            Text("No songs yet. Compose one, or say “Hey Google, play an upbeat gospel song on Songsmith”.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("No tracks yet. Compose one, or say “Hey Google, play hard acid techno on Songsmith”.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         items(entries, key = { it.id }) { e ->
             SongCard(e, openId == e.id, controller, state.busy,
@@ -445,7 +445,7 @@ fun SongCard(e: Entry, expanded: Boolean, controller: MediaController?, busy: Bo
                 if (e.summary.isNotBlank()) Text(e.summary, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (e.lyrics.isNotBlank()) Text(e.lyrics, fontSize = 14.sp)
                 Box {
-                    OutlinedTextField(change, { change = it }, placeholder = { Text("Change it: add a choir, make it slower…") },
+                    OutlinedTextField(change, { change = it }, placeholder = { Text("Change it: more energy, darker breakdown…") },
                         modifier = Modifier.fillMaxWidth().padding(end = 56.dp), shape = RoundedCornerShape(14.dp))
                     FilledIconButton(onClick = dictate, modifier = Modifier.align(Alignment.CenterEnd)) { Icon(painterResource(R.drawable.ic_mic), "Speak a change") }
                 }
@@ -497,8 +497,8 @@ fun SettingsScreen() {
                 Text("1. On your phone open Android Auto settings, tap Version ten times to unlock developer settings.\n" +
                     "2. In the ⋮ menu open Developer settings and turn on Unknown sources.\n" +
                     "3. In Android Auto's Customise launcher, make sure Songsmith is ticked.\n" +
-                    "4. In the car say: “Hey Google, play a chill amapiano song with a female singer on Songsmith.”\n" +
-                    "5. Change it with: “Hey Google, play make it slower on Songsmith.” Or tap a quick idea on the Songsmith screen.",
+                    "4. In the car say: “Hey Google, play melancholic acid trance on Songsmith.”\n" +
+                    "5. Change it with: “Hey Google, play more energy on Songsmith.” Or tap a quick idea on the Songsmith screen.",
                     fontSize = 14.sp, lineHeight = 21.sp)
             }
         }

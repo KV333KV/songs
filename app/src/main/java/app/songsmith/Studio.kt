@@ -22,8 +22,8 @@ class Prefs(ctx: Context) {
         get() = sp.getString("model", DEFAULT_MODEL)?.ifBlank { DEFAULT_MODEL } ?: DEFAULT_MODEL
         set(v) = sp.edit().putString("model", v.trim()).apply()
     var voices: Voices
-        get() = Voices.of(sp.getString("voices", "female") ?: "female")
-        set(v) = sp.edit().putString("voices", v.combo()).apply()
+        get() = Voices.of(sp.getString("voices2", "none") ?: "none")
+        set(v) = sp.edit().putString("voices2", v.combo()).apply()
     var length: String
         get() = sp.getString("length", "full") ?: "full"
         set(v) = sp.edit().putString("length", v).apply()

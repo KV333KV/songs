@@ -2,14 +2,14 @@
 
 Say what you want to hear, and Claude composes it, a built-in synth band records it, and it plays. This works in the car through Android Auto, with your voice, without touching the screen.
 
-> "Hey Google, play a chill amapiano song with a female singer on Songsmith"
-> "Hey Google, play make it slower on Songsmith"
+> "Hey Google, play melancholic acid trance on Songsmith"
+> "Hey Google, play more energy on Songsmith"
 
 ## What it does
 
 - **Hands-free in the car.** Android Auto lists Songsmith as a media app. Ask for a song by voice. Songsmith says "Composing…", plays a soft chord bed while Claude writes, then announces the title and plays the song. If you start with "make it…", "add…" or "change…", it reworks the last song instead.
-- **One-tap ideas on the car screen.** Under *Start a song* there are quick ideas (Surprise me, Chill amapiano, Uplifting gospel and more). *Your songs* has everything you've made.
-- **Male, female and choir vocals, in any mix.** Say "male", "female", "choir" or "instrumental" in your request, or set defaults on the phone. Without those words, your defaults apply.
+- **One-tap ideas on the car screen.** Under *Start a song* there are quick ideas (Surprise me, Acid techno, Melancholic trance, Warehouse rave, Hard techno, Psytrance). *Your songs* has everything you've made.
+- **Built for high-energy electronic music.** Techno, acid, trance and rave, melancholic and instrumental by default, with a 909 kit, 303-style acid bass, rave stabs and supersaw leads. Optional male, female or choir vocals if you ask for them.
 - **Phone app.** It has a Create screen (type or dictate, pick singers and a style), a Library (play songs, read lyrics, change a song by voice, delete) and Settings. Driving mode is one giant talk button.
 - Songs use the same format as the Pocket Songsmith web app.
 
@@ -51,9 +51,9 @@ Android Auto only shows apps from the Play Store unless you allow unknown source
 
 | Say | What happens |
 | --- | --- |
-| "Hey Google, play **an uplifting gospel song with a choir** on Songsmith" | Composes and plays a new song |
-| "…play **a short lo-fi instrumental** on Songsmith" | "Short" makes a one-minute sketch; "instrumental" means no singers |
-| "…play **make it slower and add a male singer** on Songsmith" | Reworks the last song |
+| "Hey Google, play **hard acid techno at 145** on Songsmith" | Composes and plays a new track |
+| "…play **a short melancholic trance loop** on Songsmith" | "Short" makes a one-minute loop |
+| "…play **darker and harder** on Songsmith" | Reworks the last track |
 | "…play **Golden Hour** on Songsmith" | Plays a saved song with that title |
 | "…play Songsmith" | Plays your latest song |
 
