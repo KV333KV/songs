@@ -15,6 +15,8 @@ android {
         val build = (project.findProperty("buildNumber") as String?)?.toIntOrNull() ?: 1
         versionCode = build
         versionName = "1.$build"
+        // Key for sending suggestions to the private feedback repo; comes from an encrypted CI secret, never the code.
+        buildConfigField("String", "FEEDBACK_TOKEN", "\"" + (System.getenv("FEEDBACK_TOKEN") ?: "") + "\"")
     }
 
     // One fixed key for every build, so new versions always install over the old one.
@@ -45,6 +47,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

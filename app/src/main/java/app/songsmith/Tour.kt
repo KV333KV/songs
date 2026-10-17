@@ -24,6 +24,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -105,6 +106,11 @@ private val CARDS = listOf(
             "Or check any time: Settings → App updates.",
             "To share the app, send Songsmith.apk. Friends use their own API key, or the free composer.",
             "Reopen these cards any time with the ? button.")),
+    Flashcard(R.drawable.ic_spark, Color(0xFF3CCB7F), "Help make it better", "Settings → Suggestions",
+        listOf("Got an idea or found a problem? Open Settings and scroll to “How can we make it better?”.",
+            "Pick Idea, Problem, Music, Learning or Other and write what you'd like.",
+            "Tap Send suggestion. It goes privately to the app's creator.",
+            "No internet? It's saved and sent automatically later.")),
 )
 
 /** Swipeable flip cards that explain the app. Tap a card to flip it. */
@@ -113,7 +119,9 @@ fun HowItWorks(onClose: () -> Unit) {
     val pager = rememberPagerState { CARDS.size }
     val flipped = remember { mutableStateMapOf<Int, Boolean>() }
     val scope = rememberCoroutineScope()
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).systemBarsPadding().padding(20.dp)) {
+    // Surface sets the right text colour for light and dark mode.
+    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background, contentColor = MaterialTheme.colorScheme.onSurface) {
+    Column(Modifier.fillMaxSize().systemBarsPadding().padding(20.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("How Songsmith works", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
             TextButton(onClick = onClose) { Text("Close") }
@@ -148,14 +156,14 @@ fun HowItWorks(onClose: () -> Unit) {
                         Modifier.fillMaxSize().graphicsLayer { rotationY = 180f }.verticalScroll(rememberScrollState()).padding(26.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp),
                     ) {
-                        Text(card.front, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = card.color)
+                        Text(card.front, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
                         card.back.forEachIndexed { n, line ->
                             Row {
                                 Box(Modifier.size(26.dp).clip(CircleShape).background(card.color), contentAlignment = Alignment.Center) {
                                     Text("${n + 1}", fontWeight = FontWeight.Bold, color = Color(0xFF14181F), fontSize = 13.sp)
                                 }
                                 Spacer(Modifier.size(12.dp))
-                                Text(line, fontSize = 17.sp, lineHeight = 24.sp, modifier = Modifier.weight(1f))
+                                Text(line, fontSize = 17.sp, lineHeight = 24.sp, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
                             }
                         }
                     }
@@ -176,5 +184,6 @@ fun HowItWorks(onClose: () -> Unit) {
             if (pager.currentPage < CARDS.size - 1) Button(onClick = { scope.launch { pager.animateScrollToPage(pager.currentPage + 1) } }) { Text("Next") }
             else Button(onClick = onClose) { Text("Start making music") }
         }
+    }
     }
 }

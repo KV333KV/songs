@@ -207,7 +207,7 @@ fun App(controller: MediaController?) {
     var driving by remember { mutableStateOf(false) }
     val state by Studio.state.collectAsStateWithLifecycle()
     val appCtx = LocalContext.current
-    LaunchedEffect(Unit) { Updates.autoCheck(appCtx) }
+    LaunchedEffect(Unit) { Updates.autoCheck(appCtx); Feedback.flush(appCtx) }
 
     val tourPrefs = remember { Prefs(appCtx) }
     var showTour by remember { mutableStateOf(!tourPrefs.seenTour) }
@@ -609,6 +609,7 @@ fun SettingsScreen(onHelp: () -> Unit = {}) {
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
         OutlinedButton(onClick = onHelp, modifier = Modifier.fillMaxWidth()) { Text("How Songsmith works (flashcards)") }
+        SuggestionBox()
         UpdateSection()
         val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
         Text("Songsmith version $version", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
