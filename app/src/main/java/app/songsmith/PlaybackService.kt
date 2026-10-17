@@ -60,6 +60,7 @@ class PlaybackService : MediaLibraryService() {
         const val EXTRA_VOICES = "voices"
         const val EXTRA_LENGTH = "length"
         const val EXTRA_CHANGE = "change"
+        const val EXTRA_SAMPLES = "samples"
 
         /** One-tap ideas for the car screen. */
         val IDEA_LIST = listOf(
@@ -174,7 +175,9 @@ class PlaybackService : MediaLibraryService() {
         }
         lib.find(q).firstOrNull()?.let { if (it.title.equals(q, true)) return mutableListOf(songItem(it)) }
         if (refineWords.containsMatchIn(q)) lib.latest()?.let { return startRefine(it.id, q) }
-        return startCompose(q, voicesFrom(q), lengthFrom(q))
+        val wantsSamples = Regex("\\b(my )?(samples?|snippets?|recordings?|chops?)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
+        val ids = if (wantsSamples) SampleStore(this).list().take(3).map { it.id } else emptyList()
+        return startCompose(q, voicesFrom(q), lengthFrom(q), ids)
     }
 
     private fun voicesFrom(q: String): Voices {
@@ -188,7 +191,7 @@ class PlaybackService : MediaLibraryService() {
 
     private fun lengthFrom(q: String) = if (Regex("\\b(short|quick|sketch)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)) "short" else prefs.length
 
-    private suspend fun startCompose(brief: String, voices: Voices, length: String): MutableList<MediaItem> {
+    private suspend fun startCompose(brief: String, voices: Voices, length: String, sampleIds: List<String> = emptyList()): MutableList<MediaItem> {
         if (job?.isActive == true) return say("I'm still working on the last song. It'll start as soon as it's ready.")
         if (prefs.apiKey.isBlank()) {
             Studio.fail("Add your Anthropic API key in Settings first.")
@@ -196,7 +199,7 @@ class PlaybackService : MediaLibraryService() {
         }
         job = scope.launch {
             try {
-                val e = withContext(Dispatchers.IO) { composer.compose(brief, voices, length) }
+                val e = withContext(Dispatchers.IO) { composer.compose(brief, voices, length, sampleIds) }
                 Studio.done("“${e.title}” is ready.")
                 session.notifyChildrenChanged(SONGS, lib.list().size, null)
                 play(say("Here's ${e.title}.") + songItem(e))
@@ -207,7 +210,8 @@ class PlaybackService : MediaLibraryService() {
                 play(say("Sorry, that didn't work. $msg"))
             }
         }
-        val who = if (voices.combo() == "none") "an instrumental" else "a song with ${voices.describe().lowercase()} vocals"
+        val who = (if (voices.combo() == "none") "an instrumental" else "a track with ${voices.describe().lowercase()} vocals") +
+            (if (sampleIds.isNotEmpty()) " using your samples" else "")
         val intro = say("Composing $who. Give me about a minute.")
         val bed = waitingFile()
         if (bed.exists()) intro.add(fileItem("waiting", bed, "Composing your song…"))
@@ -257,6 +261,7 @@ class PlaybackService : MediaLibraryService() {
                 extras?.getString(EXTRA_BRIEF) ?: "Surprise me.",
                 Voices.of(extras?.getString(EXTRA_VOICES) ?: prefs.voices.combo()),
                 extras?.getString(EXTRA_LENGTH) ?: prefs.length,
+                extras?.getString(EXTRA_SAMPLES)?.split(",")?.filter { it.isNotBlank() } ?: emptyList(),
             )
             id.startsWith("refine:") -> startRefine(id.removePrefix("refine:"), extras?.getString(EXTRA_CHANGE) ?: "Make it better.")
             id == "latest" -> lib.latest()?.let { mutableListOf(songItem(it)) } ?: mutableListOf()

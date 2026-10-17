@@ -60,7 +60,7 @@ class Synth(val sr: Int = 32000) {
     private val fBw = doubleArrayOf(80.0, 90.0, 120.0)
     private val fGain = doubleArrayOf(1.0, .6, .32)
 
-    val defaultVol = mapOf("drums" to .9, "bass" to .85, "chords" to .6, "lead" to .6, "arp" to .45, "vocal" to .85)
+    val defaultVol = mapOf("drums" to .9, "bass" to .85, "chords" to .6, "lead" to .6, "arp" to .45, "vocal" to .85, "samples" to .8)
     private val send = mapOf("drums" to .06, "bass" to 0.0, "chords" to .32, "lead" to .22, "arp" to .3, "vocal" to .35)
     private val pan = mapOf("drums" to 0.0, "bass" to 0.0, "chords" to 0.0, "lead" to -.15, "arp" to .35, "vocal" to 0.0)
 
@@ -278,13 +278,42 @@ class Synth(val sr: Int = 32000) {
         }
     }
 
+    /** Plays a recorded snippet, sampler style: loops are sped up or slowed to the song tempo (pitch moves with it). */
+    private fun sample(out: Out, start: Int, durSec: Double, vel: Double, pcm: FloatArray, meta: SampleMeta?, pitch: Int, songBpm: Int) {
+        if (pcm.isEmpty()) return
+        var rate = 2.0.pow(pitch / 12.0) * SAMPLE_RATE / sr
+        val loop = meta?.role == "loop"
+        meta?.bpm?.takeIf { loop && it > 0 }?.let { b ->
+            var ratio = songBpm.toDouble() / b
+            while (ratio > 1.5) ratio /= 2
+            while (ratio < .75) ratio *= 2
+            rate *= ratio
+        }
+        val natural = pcm.size / rate
+        val n = if (loop) (durSec * sr).toInt() else min((durSec * sr).toInt(), natural.toInt()).coerceAtLeast((.05 * sr).toInt())
+        val fade = (.006 * sr).toInt()
+        val g = vel * 0.9
+        for (k in 0 until n) {
+            val i = start + k
+            if (i >= out.size) break
+            if (i < 0) continue
+            var p = k * rate
+            if (loop) p %= pcm.size.toDouble() else if (p >= pcm.size - 1) break
+            val j = p.toInt(); val f = p - j
+            val a = pcm[j]; val b = pcm[min(j + 1, pcm.size - 1)]
+            val env = min(1.0, min(k, n - 1 - k).toDouble() / fade)
+            out.add(i, (a + (b - a) * f) * g * env)
+        }
+    }
+
     /** Render the whole song. Returns interleaved-ready left and right channels. */
-    fun render(song: Song, vol: Map<String, Double> = defaultVol, onProgress: (Double) -> Unit = {}): Pair<FloatArray, FloatArray> {
+    fun render(song: Song, vol: Map<String, Double> = defaultVol, samples: Map<String, Pair<FloatArray, SampleMeta?>> = emptyMap(), onProgress: (Double) -> Unit = {}): Pair<FloatArray, FloatArray> {
         val (events, totalBeats) = expand(song)
         val spb = 60.0 / song.bpm
         val len = ((totalBeats * spb + 3.5) * sr).toInt()
         val l = FloatArray(len); val r = FloatArray(len); val rev = FloatArray(len); val drums = FloatArray(len)
         val outs = TRACKS.associateWith { t -> Out(l, r, rev, vol[t] ?: 0.7, send[t] ?: 0.0, pan[t] ?: 0.0) }
+        val sampleOut = Out(l, r, rev, vol["samples"] ?: .8, .15, 0.0)
         val vs = Voices.of(song.instruments["vocal"] ?: "none")
         val drumPreset = song.instruments["drums"] ?: "909"
         events.forEachIndexed { idx, e ->
@@ -293,6 +322,7 @@ class Synth(val sr: Int = 32000) {
             val dur = e.dur * spb
             when (e.track) {
                 "drums" -> drum(drums, start, e.hit, e.vel, drumPreset)
+                "samples" -> samples[e.sampleId]?.let { (pcm, meta) -> sample(sampleOut, start, dur, e.vel, pcm, meta, e.pitch, song.bpm) }
                 "vocal" -> {
                     val o = outs["vocal"]!!
                     val f = mtof(e.midi.toDouble())

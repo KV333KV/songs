@@ -10,6 +10,7 @@ Say what you want to hear, and Claude composes it, a built-in synth band records
 - **Hands-free in the car.** Android Auto lists Songsmith as a media app. Ask for a song by voice. Songsmith says "Composing…", plays a soft chord bed while Claude writes, then announces the title and plays the song. If you start with "make it…", "add…" or "change…", it reworks the last song instead.
 - **One-tap ideas on the car screen.** Under *Start a song* there are quick ideas (Surprise me, Acid techno, Melancholic trance, Warehouse rave, Hard techno, Psytrance). *Your songs* has everything you've made.
 - **Built for high-energy electronic music.** Techno, acid, trance and rave, melancholic and instrumental by default, with a 909 kit, 303-style acid bass, rave stabs and supersaw leads. Optional male, female or choir vocals if you ask for them.
+- **Record samples.** Tap the big red button on the Samples tab (or in Driving mode) to record up to 30 seconds of whatever is playing nearby, or import an audio file. Trim it, call it a loop, hit or texture, and pick it on the Create screen. Claude builds the track around it; loops are tempo-matched like an old-school sampler. In the car, say "…with my samples" to use your latest snippets.
 - **Phone app.** It has a Create screen (type or dictate, pick singers and a style), a Library (play songs, read lyrics, change a song by voice, delete) and Settings. Driving mode is one giant talk button.
 - Songs use the same format as the Pocket Songsmith web app.
 

@@ -145,8 +145,9 @@ fun ask(c: MediaController, query: String) {
     c.prepare(); c.play()
 }
 
-fun requestCompose(c: MediaController, brief: String, voices: Voices, length: String) {
+fun requestCompose(c: MediaController, brief: String, voices: Voices, length: String, samples: List<String> = emptyList()) {
     val extras = Bundle().apply {
+        putString(PlaybackService.EXTRA_SAMPLES, samples.joinToString(","))
         putString(PlaybackService.EXTRA_BRIEF, brief)
         putString(PlaybackService.EXTRA_VOICES, voices.combo())
         putString(PlaybackService.EXTRA_LENGTH, length)
@@ -209,7 +210,7 @@ fun App(controller: MediaController?) {
             Column {
                 NowPlaying(controller)
                 NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                    listOf(Triple("Create", R.drawable.ic_spark, 0), Triple("Library", R.drawable.ic_library, 1), Triple("Settings", R.drawable.ic_settings, 2)).forEach { (label, icon, i) ->
+                    listOf(Triple("Create", R.drawable.ic_spark, 0), Triple("Samples", R.drawable.ic_wave, 1), Triple("Library", R.drawable.ic_library, 2), Triple("Settings", R.drawable.ic_settings, 3)).forEach { (label, icon, i) ->
                         NavigationBarItem(selected = tab == i, onClick = { tab = i }, icon = { Icon(painterResource(icon), null) }, label = { Text(label) })
                     }
                 }
@@ -219,7 +220,8 @@ fun App(controller: MediaController?) {
         Box(Modifier.padding(pad).fillMaxSize()) {
             when (tab) {
                 0 -> CreateScreen(controller, state) { driving = true }
-                1 -> LibraryScreen(controller, state)
+                1 -> SamplesScreen(state)
+                2 -> LibraryScreen(controller, state)
                 else -> SettingsScreen()
             }
         }
@@ -250,13 +252,15 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
     var length by remember { mutableStateOf(prefs.length) }
     val styles = listOf("Acid techno", "Trance", "Rave", "Melodic techno", "Hard techno", "Psytrance", "Acid house", "Hard trance", "Breakbeat", "Drum & bass", "Dark & melancholic", "Euphoric")
     var picked by remember { mutableStateOf(setOf<String>()) }
+    val sampleList = remember(state.libraryVersion) { SampleStore(ctx).list() }
+    var pickedSamples by remember { mutableStateOf(setOf<String>()) }
 
     fun go(text: String = brief) {
         val c = controller ?: return
         val full = listOf(text.trim(), if (picked.isNotEmpty()) "Style: ${picked.joinToString(", ")}." else "").filter { it.isNotEmpty() }.joinToString("\n")
         if (full.isEmpty()) return
         prefs.voices = voices; prefs.length = length
-        requestCompose(c, full, voices, length)
+        requestCompose(c, full, voices, length, sampleList.filter { it.id in pickedSamples }.map { it.id })
     }
     val dictate = rememberDictation("Describe your song") { said ->
         brief = if (brief.isBlank()) said else "$brief $said"
@@ -292,6 +296,17 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
         Text("Style", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(styles) { s -> FilterChip(selected = s in picked, onClick = { picked = if (s in picked) picked - s else picked + s }, label = { Text(s) }) }
+        }
+
+        if (sampleList.isNotEmpty()) {
+            Text("Use your samples", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(sampleList, key = { it.id }) { m ->
+                    FilterChip(selected = m.id in pickedSamples, onClick = {
+                        pickedSamples = if (m.id in pickedSamples) pickedSamples - m.id else if (pickedSamples.size < 4) pickedSamples + m.id else pickedSamples
+                    }, label = { Text(m.name) })
+                }
+            }
         }
 
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -347,6 +362,13 @@ fun DrivingScreen(controller: MediaController?, state: Studio.State, onExit: () 
     val ctx = LocalContext.current
     val prefs = remember { Prefs(ctx) }
     val listen = rememberDictation("What should I make?") { said -> controller?.let { ask(it, said) } }
+    var note by remember { mutableStateOf("") }
+    val (rec, toggleRec) = rememberSnippetRecorder(onDone = { pcm ->
+        val st = SampleStore(ctx)
+        val m = st.save(pcm, "Car snippet " + java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date()), if (pcm.size >= SAMPLE_RATE * 4) "loop" else "hit", "")
+        note = "Saved “${m.name}”. Say “…with my samples” to use it."
+        Studio.libraryChanged()
+    }, onError = { note = it })
     Column(
         Modifier.fillMaxSize().background(Ink).padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.SpaceBetween,
@@ -359,9 +381,14 @@ fun DrivingScreen(controller: MediaController?, state: Studio.State, onExit: () 
             Modifier.size(240.dp).clip(CircleShape).background(Coral).clickable(enabled = controller != null) { listen() },
             contentAlignment = Alignment.Center,
         ) { Icon(painterResource(R.drawable.ic_mic), "Talk", tint = Ink, modifier = Modifier.size(96.dp)) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            RecordButton(rec, 84, toggleRec)
+            Text(if (rec.recording) "Recording… tap to stop" else "Record a snippet of what's playing", color = Color.White, fontSize = 16.sp, modifier = Modifier.weight(1f))
+        }
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (note.isNotEmpty()) Text(note, color = Color(0xFFFFB4B6), fontSize = 15.sp)
             Text(
-                if (state.message.isNotEmpty()) state.message else "Tap and say what you want, like “hard acid techno at 145” or “more energy”.",
+                if (state.message.isNotEmpty()) state.message else "Tap and say what you want, like “hard acid techno at 145”, “acid trance with my samples” or “more energy”.",
                 color = Color.White, fontSize = 20.sp, lineHeight = 26.sp,
             )
             Text("Default singers: ${prefs.voices.describe()}", color = Color(0xFF98A2B3))

@@ -69,7 +69,20 @@ Musical rules:
         if (length == "short") "Length: about 24-36 bars in total (a loop-length idea around one minute)."
         else "Length: about 88-112 bars in total (a full track of roughly 3 minutes at dance tempo)."
 
-    fun compose(brief: String, voices: Voices, length: String) = """
+    private fun samplesBlock(samples: List<SampleMeta>): String {
+        if (samples.isEmpty()) return ""
+        return """
+
+SAMPLES the user recorded from songs they love. They are the stars of this track: feature every one of them clearly, more than once.
+${samples.joinToString("\n") { "- " + it.describe() }}
+Add a "samples" track to the patterns where they play: [beat, "sampleId", lengthInBeats, velocity, pitchSemitones].
+- role loop: plays for lengthInBeats, repeating to fill it, and is sped up or slowed to your tempo automatically. Use it as a groove bed (for example the full 16 or 32 bars of a drop) or as the hook of the breakdown.
+- role hit: a one-shot. Chop it rhythmically (offbeats, 16th stutters, a call-and-response with the lead, a riser before the drop) and use pitchSemitones (-12 to 12) to fit the key.
+- role texture: an atmosphere under intros and breakdowns, long lengthInBeats, lower velocity.
+Write the rest of the music around the samples: match their key where one is given, and leave room in the frequency range they occupy."""
+    }
+
+    fun compose(brief: String, voices: Voices, length: String, samples: List<SampleMeta> = emptyList()) = """
 You are an expert songwriter, composer and producer. Compose a complete original song for a small built-in synth engine with synthesized singers.
 
 THE USER'S DESCRIPTION:
@@ -77,12 +90,12 @@ $brief
 
 ${lengthLine(length)}
 
-${vocalBlock(voices)}
+${vocalBlock(voices)}${samplesBlock(samples)}
 
 $FORMAT
 """.trim()
 
-    fun refine(brief: String, songJson: String, change: String) = """
+    fun refine(brief: String, songJson: String, change: String, samples: List<SampleMeta> = emptyList()) = """
 You are an expert songwriter, composer and producer editing a song for a small built-in synth engine with synthesized singers.
 
 ${if (brief.isNotBlank()) "The song was originally described as: $brief\n\n" else ""}CURRENT SONG (JSON):
@@ -91,7 +104,7 @@ $songJson
 THE CHANGE THE USER WANTS:
 $change
 
-Apply the change and keep everything else as it is unless the change needs it. Return the complete updated song, including the parts that did not change. If the change adds or swaps singers, update instruments.vocal and write or adjust the "vocal" track and lyrics to match.
+Apply the change and keep everything else as it is unless the change needs it. Return the complete updated song, including the parts that did not change. If the change adds or swaps singers, update instruments.vocal and write or adjust the "vocal" track and lyrics to match.${samplesBlock(samples)}
 
 $FORMAT
 """.trim()

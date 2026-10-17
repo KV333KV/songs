@@ -37,6 +37,7 @@ class Prefs(ctx: Context) {
 data class Entry(
     val id: String, val title: String, val genre: String, val bpm: Int, val key: String, val vocal: String,
     val seconds: Double, val created: Long, val updated: Long, val brief: String, val lyrics: String, val summary: String,
+    val samples: List<String> = emptyList(),
 )
 
 /** Songs live in app storage: <id>.json (song + details) and <id>.wav (the rendered audio). */
@@ -63,13 +64,14 @@ class Library(ctx: Context) {
             vocal = song.instruments["vocal"] ?: "none", seconds = song.seconds,
             created = m.optLong("created"), updated = m.optLong("updated"), brief = m.optString("brief"),
             lyrics = song.lyricsText(), summary = song.summary,
+            samples = m.optJSONArray("samples")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
         ) to song
     }
 
-    fun save(id: String, song: Song, brief: String, created: Long): Entry {
+    fun save(id: String, song: Song, brief: String, created: Long, samples: List<String> = emptyList()): Entry {
         val now = System.currentTimeMillis()
         val o = JSONObject()
-            .put("meta", JSONObject().put("id", id).put("created", created).put("updated", now).put("brief", brief))
+            .put("meta", JSONObject().put("id", id).put("created", created).put("updated", now).put("brief", brief).put("samples", org.json.JSONArray(samples)))
             .put("song", song.toJson())
         json(id).writeText(o.toString())
         return load(id)!!.first
@@ -99,35 +101,40 @@ object Studio {
 class Composer(ctx: Context) {
     private val prefs = Prefs(ctx)
     private val lib = Library(ctx)
+    private val store = SampleStore(ctx)
     private val claude = ClaudeClient()
     private val synth = Synth()
 
-    suspend fun compose(brief: String, voices: Voices, length: String): Entry {
+    suspend fun compose(brief: String, voices: Voices, length: String, sampleIds: List<String> = emptyList()): Entry {
         Studio.report("Claude is writing your song…")
-        val text = claude.complete(prefs.apiKey, prefs.model, Prompts.compose(brief, voices, length)) { n ->
+        val metas = sampleIds.mapNotNull { store.meta(it) }
+        val text = claude.complete(prefs.apiKey, prefs.model, Prompts.compose(brief, voices, length, metas)) { n ->
             Studio.report("Writing the score · ${n / 1024} KB")
         }
         val song = parseSong(extractJson(text))
         song.instruments["vocal"] = voices.combo()
         val id = "s" + System.currentTimeMillis().toString(36)
         render(song, id)
-        return lib.save(id, song, brief, System.currentTimeMillis())
+        return lib.save(id, song, brief, System.currentTimeMillis(), metas.map { it.id })
     }
 
     suspend fun refine(id: String, change: String): Entry {
         val (entry, song) = lib.load(id) ?: throw ClaudeException("That song isn't on this phone any more.")
         Studio.report("Claude is reworking “${entry.title}”…")
-        val text = claude.complete(prefs.apiKey, prefs.model, Prompts.refine(entry.brief, song.toJson().toString(), change)) { n ->
+        val metas = entry.samples.mapNotNull { store.meta(it) }
+        val text = claude.complete(prefs.apiKey, prefs.model, Prompts.refine(entry.brief, song.toJson().toString(), change, metas)) { n ->
             Studio.report("Rewriting the score · ${n / 1024} KB")
         }
         val updated = parseSong(extractJson(text))
         render(updated, id)
-        return lib.save(id, updated, entry.brief, entry.created)
+        return lib.save(id, updated, entry.brief, entry.created, entry.samples)
     }
 
     private suspend fun render(song: Song, id: String) = withContext(Dispatchers.Default) {
         Studio.report("Recording the band…", 0f)
-        val (l, r) = synth.render(song) { p -> Studio.report("Recording the band…", p.toFloat()) }
+        val used = song.patterns.values.flatMap { p -> p.samples.map { it.id } }.toSet()
+        val pcm = used.mapNotNull { sid -> store.pcm(sid)?.let { sid to (it to store.meta(sid)) } }.toMap()
+        val (l, r) = synth.render(song, synth.defaultVol, pcm) { p -> Studio.report("Recording the band…", p.toFloat()) }
         val tmp = File(lib.wav(id).path + ".tmp")
         synth.writeWav(l, r, tmp)
         tmp.renameTo(lib.wav(id))

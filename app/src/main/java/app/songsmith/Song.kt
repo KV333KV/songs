@@ -52,7 +52,8 @@ data class Voices(val male: Boolean, val female: Boolean, val choir: Boolean) {
 
 class Note(val beat: Double, val midi: Int, val dur: Double, val vel: Double)
 class Hit(val beat: Double, val hit: Char, val vel: Double)
-class Pattern(val bars: Int, val drums: List<Hit>, val notes: Map<String, List<Note>>)
+class SampleHit(val beat: Double, val id: String, val len: Double, val vel: Double, val pitch: Int)
+class Pattern(val bars: Int, val drums: List<Hit>, val notes: Map<String, List<Note>>, val samples: List<SampleHit> = emptyList())
 class Section(val name: String, val pattern: String, val repeat: Int, val lyrics: String)
 
 class Song(
@@ -89,6 +90,7 @@ class Song(
             for (t in TRACKS) if (t != "drums") {
                 o.put(t, JSONArray().apply { (p.notes[t] ?: emptyList()).forEach { put(JSONArray().put(it.beat).put(it.midi).put(it.dur).put(it.vel)) } })
             }
+            o.put("samples", JSONArray().apply { p.samples.forEach { put(JSONArray().put(it.beat).put(it.id).put(it.len).put(it.vel).put(it.pitch)) } })
             pats.put(id, o)
         }
         val arr = JSONArray()
@@ -171,7 +173,16 @@ fun parseSong(input: JSONObject): Song {
             }
             if (t != "drums") notes[t] = list.sortedBy { it.beat }
         }
-        patterns[id] = Pattern(bars, drums.sortedBy { it.beat }, notes)
+        val smp = ArrayList<SampleHit>()
+        val sa = p.optJSONArray("samples") ?: JSONArray()
+        for (i in 0 until minOf(sa.length(), 200)) {
+            val it = sa.optJSONArray(i) ?: continue
+            val beat = num(it.opt(0), -1.0)
+            val sid = it.opt(1)?.toString()?.trim() ?: continue
+            if (beat < 0 || beat >= maxB || sid.isEmpty()) continue
+            smp.add(SampleHit(beat, sid.take(40), num(it.opt(2), 1.0).coerceIn(0.05, 64.0), num(it.opt(3), 0.85).coerceIn(0.05, 1.0), num(it.opt(4), 0.0).roundToInt().coerceIn(-24, 24)))
+        }
+        patterns[id] = Pattern(bars, drums.sortedBy { it.beat }, notes, smp.sortedBy { it.beat })
     }
     val arrangement = ArrayList<Section>()
     val ra = raw.optJSONArray("arrangement") ?: JSONArray()
@@ -209,7 +220,7 @@ fun extractJson(text: String): JSONObject {
 
 class Ev(
     val beat: Double, val track: String, val midi: Int = 0, val dur: Double = 0.25, val vel: Double,
-    val hit: Char = ' ', val vowel: Char = 'a', val sec: Int = 0,
+    val hit: Char = ' ', val vowel: Char = 'a', val sec: Int = 0, val sampleId: String = "", val pitch: Int = 0,
 )
 
 private fun vowelsOf(text: String): List<Char> {
@@ -229,6 +240,7 @@ fun expand(song: Song): Pair<List<Ev>, Double> {
         repeat(a.repeat) {
             val base = bar * 4.0
             p.drums.forEach { events.add(Ev(base + it.beat, "drums", vel = it.vel, hit = it.hit)) }
+            p.samples.forEach { events.add(Ev(base + it.beat, "samples", dur = it.len, vel = it.vel, sampleId = it.id, pitch = it.pitch)) }
             for (t in TRACKS) if (t != "drums") for (n in p.notes[t] ?: emptyList()) {
                 if (t == "vocal") events.add(Ev(base + n.beat, t, n.midi, n.dur, n.vel, vowel = vow[vi++ % vow.size], sec = si))
                 else events.add(Ev(base + n.beat, t, n.midi, n.dur, n.vel, sec = si))
