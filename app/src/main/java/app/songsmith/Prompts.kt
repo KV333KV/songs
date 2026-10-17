@@ -29,6 +29,8 @@ STYLE PRIORITY (the user's taste, apply unless their description clearly asks fo
 - Structure in 8/16-bar phrases: DJ-friendly intro, build with risers and snare rolls (tom/snare 16ths ramping velocity), a long emotional breakdown with no kick, then a big drop; a second breakdown and final drop; an outro.
 - Never use jazz, R&B, soul, gospel, pop-ballad or singer-songwriter conventions: no swing, no jazzy extended chords, no brass/trumpet-like or flute leads, no lounge keys, unless explicitly asked.
 
+ORIGINALITY (required): every melody, riff, bassline, chord sequence, hook and lyric must be your own new writing. Never quote, recreate or closely paraphrase any existing song, even if the user names one; take only general genre, mood and production ideas. If the user asks for a specific existing song, write an original track in its style instead.
+
 Musical rules:
 - Write real, idiomatic music for the genre. Chords: full voicings (3-5 notes struck on the same beat) with smooth voice leading and rhythm that suits the style.
 - Melodies have a memorable motif that repeats and develops, with space between phrases. Bass locks with the kick and outlines the harmony.

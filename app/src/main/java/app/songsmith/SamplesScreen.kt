@@ -28,6 +28,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -187,9 +189,9 @@ fun SamplesScreen(state: Studio.State) {
 
         draft?.let { pcm ->
             SampleEditor(pcm,
-                onSave = { clip, name, role, note ->
+                onSave = { clip, name, role, note, own ->
                     scope.launch {
-                        withContext(Dispatchers.Default) { store.save(clip, name, role, note) }
+                        withContext(Dispatchers.Default) { store.save(clip, name, role, note, own) }
                         draft = null; Preview.stop(); list = store.list(); Studio.libraryChanged()
                     }
                 },
@@ -199,13 +201,13 @@ fun SamplesScreen(state: Studio.State) {
         Text("Your samples", fontWeight = FontWeight.Bold, fontSize = 20.sp)
         if (list.isEmpty()) Text("Nothing saved yet. Recorded snippets show up here and on the Create screen.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         list.forEach { m -> SampleRow(m, store) { list = store.list(); Studio.libraryChanged() } }
-        Text("Tip: hold the phone near the speaker and keep the room quiet. Samples from other people's records are fine for personal listening; clear them before releasing a track.",
+        Text("Tip: hold the phone near the speaker and keep the room quiet. Snippets from other people's music play in the app but are always left out of downloads, unless you switch on “my own sound”.",
             fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
 @Composable
-fun SampleEditor(pcm: FloatArray, onSave: (FloatArray, String, String, String) -> Unit, onDiscard: () -> Unit) {
+fun SampleEditor(pcm: FloatArray, onSave: (FloatArray, String, String, String, Boolean) -> Unit, onDiscard: () -> Unit) {
     val ctx = LocalContext.current
     val total = pcm.size.toFloat() / SAMPLE_RATE
     var range by remember(pcm) { mutableStateOf(0f..min(total, MAX_SNIPPET.toFloat())) }
@@ -213,6 +215,7 @@ fun SampleEditor(pcm: FloatArray, onSave: (FloatArray, String, String, String) -
     var name by remember(pcm) { mutableStateOf("Snippet $stamp") }
     var role by remember(pcm) { mutableStateOf(if (total >= 4f) "loop" else "hit") }
     var note by remember(pcm) { mutableStateOf("") }
+    var own by remember(pcm) { mutableStateOf(false) }
     val pk = remember(pcm) { peaks(pcm, 140) }
     val accent = MaterialTheme.colorScheme.primary
     val dim = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .35f)
@@ -248,8 +251,14 @@ fun SampleEditor(pcm: FloatArray, onSave: (FloatArray, String, String, String) -
                 else -> "An atmosphere under intros and breakdowns."
             }, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             OutlinedTextField(note, { note = it }, label = { Text("What do you love about it? (optional)") }, modifier = Modifier.fillMaxWidth())
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(own, { own = it })
+                Text("This is my own sound, or I have permission to use it", fontSize = 14.sp)
+            }
+            Text(if (own) "It will be included when you download tracks." else "You'll hear it in the app, but downloads leave it out so the file stays copyright-safe.",
+                fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = { onSave(clip(), name, role, note) }) { Text("Save sample") }
+                Button(onClick = { onSave(clip(), name, role, note, own) }) { Text("Save sample") }
                 TextButton(onClick = onDiscard) { Text("Discard") }
             }
         }
@@ -267,6 +276,10 @@ fun SampleRow(m: SampleMeta, store: SampleStore, onChanged: () -> Unit) {
                 Text(m.name, fontWeight = FontWeight.Bold)
                 Text(listOfNotNull(SAMPLE_ROLE_LABEL[m.role], "%.1f s".format(m.seconds), m.bpm?.let { "≈$it BPM" }, m.key).joinToString(" · "),
                     fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(m.cleared, { store.setCleared(m.id, it); onChanged() }, modifier = Modifier.padding(end = 8.dp))
+                    Text(if (m.cleared) "My own sound: included in downloads" else "Left out of downloads", fontSize = 12.sp)
+                }
             }
             TextButton(onClick = { if (armed) { store.delete(m.id); onChanged() } else armed = true }) {
                 Text(if (armed) "Delete?" else "Delete", color = if (armed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)

@@ -58,6 +58,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
@@ -74,6 +76,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -399,27 +403,55 @@ fun DrivingScreen(controller: MediaController?, state: Studio.State, onExit: () 
 @Composable
 fun NowPlaying(controller: MediaController?) {
     var title by remember { mutableStateOf("") }
+    var artist by remember { mutableStateOf("") }
     var playing by remember { mutableStateOf(false) }
+    var pos by remember { mutableFloatStateOf(0f) }
+    var dur by remember { mutableFloatStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
     DisposableEffect(controller) {
         val c = controller
         val l = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
                 title = player.mediaMetadata.title?.toString() ?: ""
+                artist = player.mediaMetadata.artist?.toString() ?: ""
                 playing = player.isPlaying
             }
         }
         c?.addListener(l)
-        title = c?.mediaMetadata?.title?.toString() ?: ""; playing = c?.isPlaying ?: false
+        title = c?.mediaMetadata?.title?.toString() ?: ""; artist = c?.mediaMetadata?.artist?.toString() ?: ""; playing = c?.isPlaying ?: false
         onDispose { c?.removeListener(l) }
     }
-    if (controller == null || title.isEmpty()) return
-    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            FilledIconButton(onClick = { if (controller.isPlaying) controller.pause() else controller.play() }) {
-                Icon(painterResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play), if (playing) "Pause" else "Play")
+    LaunchedEffect(controller) {
+        while (controller != null) {
+            if (!dragging) {
+                pos = controller.currentPosition.coerceAtLeast(0).toFloat()
+                dur = controller.duration.takeIf { it > 0 }?.toFloat() ?: 0f
             }
-            Spacer(Modifier.width(12.dp))
-            Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            delay(500)
+        }
+    }
+    if (controller == null || title.isEmpty()) return
+    fun fmt(ms: Float): String { val s = (ms / 1000).toInt(); return "%d:%02d".format(s / 60, s % 60) }
+    Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    if (artist.isNotEmpty()) Text(artist, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                }
+                IconButton(onClick = { controller.seekToPreviousMediaItem() }, enabled = controller.hasPreviousMediaItem()) { Text("⏮", fontSize = 20.sp) }
+                FilledIconButton(onClick = { if (controller.isPlaying) controller.pause() else controller.play() }) {
+                    Icon(painterResource(if (playing) R.drawable.ic_pause else R.drawable.ic_play), if (playing) "Pause" else "Play")
+                }
+                IconButton(onClick = { controller.seekToNextMediaItem() }, enabled = controller.hasNextMediaItem()) { Text("⏭", fontSize = 20.sp) }
+            }
+            if (dur > 0) Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(fmt(pos), fontSize = 11.sp)
+                Slider(value = pos.coerceIn(0f, dur), valueRange = 0f..dur, modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    onValueChange = { dragging = true; pos = it },
+                    onValueChangeFinished = { controller.seekTo(pos.toLong()); dragging = false })
+                Text(fmt(dur), fontSize = 11.sp)
+            }
         }
     }
 }
@@ -434,6 +466,14 @@ fun LibraryScreen(controller: MediaController?, state: Studio.State) {
 
     LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text("Your songs", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold) }
+        if (entries.isNotEmpty()) item {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(onClick = { controller?.let { it.shuffleModeEnabled = false; playSong(it, entries.first().id) } }, enabled = controller != null) {
+                    Icon(painterResource(R.drawable.ic_play), null); Spacer(Modifier.width(6.dp)); Text("Play all (${entries.size})")
+                }
+                OutlinedButton(onClick = { controller?.let { c -> playSong(c, entries.random().id); c.shuffleModeEnabled = true } }, enabled = controller != null) { Text("Shuffle") }
+            }
+        }
         item { StatusCard(state) }
         if (entries.isEmpty()) item {
             Text("No tracks yet. Compose one, or say “Hey Google, play hard acid techno on Songsmith”.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -448,6 +488,21 @@ fun LibraryScreen(controller: MediaController?, state: Studio.State) {
 
 @Composable
 fun SongCard(e: Entry, expanded: Boolean, controller: MediaController?, busy: Boolean, onToggle: () -> Unit, onDelete: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var exportMsg by remember { mutableStateOf("") }
+    val blocked = remember(e.id, e.updated) { Exporter.uncleared(ctx, e.samples) }
+    fun export(share: Boolean) {
+        exportMsg = "Preparing a copyright-safe file…"
+        scope.launch {
+            exportMsg = runCatching {
+                val res = Exporter.prepare(ctx, e.id)
+                if (share) Exporter.share(ctx, res.file, e.title) else Exporter.saveToMusic(ctx, res.file, e.title)
+                val left = if (res.removedSamples > 0) " Recorded snippets from other music were left out." else ""
+                (if (share) "Ready to share." else "Saved to Music › Songsmith.") + left
+            }.getOrElse { it.message ?: "Couldn't export that song." }
+        }
+    }
     var change by remember { mutableStateOf("") }
     var armed by remember { mutableStateOf(false) }
     val dictate = rememberDictation("What should change?") { change = it }
@@ -468,7 +523,13 @@ fun SongCard(e: Entry, expanded: Boolean, controller: MediaController?, busy: Bo
                     Icon(painterResource(R.drawable.ic_play), "Play ${e.title}")
                 }
             }
+            if (blocked.isNotEmpty()) Text("Uses recorded snippets · downloads leave them out", fontSize = 12.sp, color = MaterialTheme.colorScheme.secondary)
             if (expanded) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (Exporter.canSaveToMusic()) Button(onClick = { export(false) }) { Text("Download") }
+                    OutlinedButton(onClick = { export(true) }) { Text("Share") }
+                }
+                if (exportMsg.isNotEmpty()) Text(exportMsg, fontSize = 13.sp)
                 if (e.summary.isNotBlank()) Text(e.summary, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (e.lyrics.isNotBlank()) Text(e.lyrics, fontSize = 14.sp)
                 Box {

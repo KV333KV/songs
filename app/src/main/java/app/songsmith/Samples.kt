@@ -40,6 +40,8 @@ val SAMPLE_ROLE_LABEL = mapOf("loop" to "Loop", "hit" to "Hit / chop", "texture"
 data class SampleMeta(
     val id: String, val name: String, val role: String, val note: String,
     val seconds: Double, val bpm: Int?, val key: String?, val created: Long,
+    /** True when the user says it's their own sound or they have permission: only then does it go into downloads. */
+    val cleared: Boolean = false,
 ) {
     fun describe(): String = buildString {
         append("id \"").append(id).append("\": \"").append(name).append("\", role ").append(role)
@@ -67,26 +69,26 @@ class SampleStore(ctx: Context) {
         return SampleMeta(
             id, o.optString("name", "Snippet"), o.optString("role", "hit"), o.optString("note", ""),
             o.optDouble("seconds", 0.0), if (o.has("bpm")) o.optInt("bpm") else null,
-            if (o.has("key")) o.optString("key") else null, o.optLong("created"),
+            if (o.has("key")) o.optString("key") else null, o.optLong("created"), o.optBoolean("cleared", false),
         )
     }
 
-    fun save(pcm: FloatArray, name: String, role: String, note: String): SampleMeta {
+    fun save(pcm: FloatArray, name: String, role: String, note: String, cleared: Boolean = false): SampleMeta {
         val id = "smp" + System.currentTimeMillis().toString(36)
         val norm = normalize(pcm)
         writeMonoWav(norm, SAMPLE_RATE, wav(id))
         val a = analyze(norm, SAMPLE_RATE)
         val o = JSONObject().put("name", name.ifBlank { "Snippet" }.take(40)).put("role", role).put("note", note.take(200))
-            .put("seconds", norm.size.toDouble() / SAMPLE_RATE).put("created", System.currentTimeMillis())
+            .put("seconds", norm.size.toDouble() / SAMPLE_RATE).put("created", System.currentTimeMillis()).put("cleared", cleared)
         a.bpm?.let { o.put("bpm", it) }
         a.key?.let { o.put("key", it) }
         json(id).writeText(o.toString())
         return meta(id)!!
     }
 
-    fun update(m: SampleMeta, name: String, role: String, note: String) {
-        val o = JSONObject(json(m.id).readText()).put("name", name.take(40)).put("role", role).put("note", note.take(200))
-        json(m.id).writeText(o.toString())
+    fun setCleared(id: String, cleared: Boolean) {
+        val o = JSONObject(json(id).readText()).put("cleared", cleared)
+        json(id).writeText(o.toString())
     }
 
     fun delete(id: String) { json(id).delete(); wav(id).delete() }
