@@ -179,11 +179,11 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
-    private suspend fun startLearn(text: String, age: String, style: String, photo: File?): MutableList<MediaItem> {
+    private suspend fun startLearn(text: String, age: String, style: String, photos: List<File>): MutableList<MediaItem> {
         if (job?.isActive == true) return say("I'm still working on the last song. It'll start as soon as it's ready.")
         job = scope.launch {
             try {
-                val e = LearningComposer(this@PlaybackService, speakToFile).make(text, age, style, photo)
+                val e = LearningComposer(this@PlaybackService, speakToFile).make(text, age, style, photos)
                 Studio.done("“${e.title}” is ready. Open Learn to sing along.")
                 session.notifyChildrenChanged(SONGS, lib.list().size, null)
                 play(say("Here's your learning song. Let's sing along!") + songItem(e))
@@ -218,7 +218,7 @@ class PlaybackService : MediaLibraryService() {
         lib.find(q).firstOrNull()?.let { if (it.title.equals(q, true)) return mutableListOf(songItem(it)) }
         Regex("^(?:a )?(?:learning song|song to learn|learn|teach me|help me (?:learn|remember))(?: about| to| that)?\\s*(.*)$", RegexOption.IGNORE_CASE).find(q)?.let { m ->
             val topic = m.groupValues[1].ifBlank { q }
-            return startLearn(topic, "7-9", "clap", null)
+            return startLearn(topic, "7-9", "clap", emptyList())
         }
         if (refineWords.containsMatchIn(q)) lib.latest()?.let { return startRefine(it.id, q) }
         val wantsSamples = Regex("\\b(my )?(samples?|snippets?|recordings?|chops?)\\b", RegexOption.IGNORE_CASE).containsMatchIn(q)
@@ -308,7 +308,7 @@ class PlaybackService : MediaLibraryService() {
                 extras?.getString(EXTRA_TEXT) ?: "",
                 extras?.getString(EXTRA_AGE) ?: "7-9",
                 extras?.getString(EXTRA_STYLE) ?: "clap",
-                extras?.getString(EXTRA_PHOTO)?.let { File(it) }?.takeIf { it.exists() },
+                extras?.getString(EXTRA_PHOTO)?.split("|")?.filter { it.isNotBlank() }?.map { File(it) }?.filter { it.exists() } ?: emptyList(),
             )
             id.startsWith("refine:") -> startRefine(id.removePrefix("refine:"), extras?.getString(EXTRA_CHANGE) ?: "Make it better.")
             id == "latest" -> lib.latest()?.let { mutableListOf(songItem(it)) } ?: mutableListOf()

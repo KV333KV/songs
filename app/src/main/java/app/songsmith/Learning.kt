@@ -3,6 +3,12 @@ package app.songsmith
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.net.Uri
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -94,7 +100,7 @@ class Lesson(
 /* ============================== the teacher (prompt) ============================== */
 
 object LessonPrompt {
-    fun build(material: String, age: String, hasPhoto: Boolean): String {
+    fun build(material: String, age: String, photos: Int): String {
         val (facts, syl, words) = when (age) {
             "4-6" -> Triple("3 to 4", "6", "very simple words a 5-year-old knows")
             "10-13" -> Triple("6 to 8", "10", "clear words for a 12-year-old, with subject terms defined")
@@ -105,8 +111,8 @@ You are an experienced primary-school teacher, learning designer and children's 
 
 A child aged $age needs to learn the material below. Turn it into a learning song that helps them understand it and remember it.
 
-THE MATERIAL${if (hasPhoto) " (also in the attached photo of the page; read it carefully)" else ""}:
-${material.ifBlank { "(see the photo)" }}
+THE MATERIAL${if (photos > 0) " (also in the $photos attached photo${if (photos > 1) "s" else ""} of the child's work; read every page carefully, including handwriting, tables and diagrams, and combine them into one song)" else ""}:
+${material.ifBlank { "(see the photos)" }}
 
 Teaching rules:
 1. Accuracy first. Only use facts that are correct and supported by the material or standard school knowledge. Never invent numbers, dates, names or facts. If the material contains a mistake, use the correct fact and mention it kindly in parentTip.
@@ -186,18 +192,26 @@ class LearningComposer(private val ctx: Context, private val speak: SpeakToFile)
     private val lib = Library(ctx)
     private val claude = ClaudeClient()
 
-    suspend fun make(material: String, age: String, style: String, photo: File?): Entry {
+    suspend fun make(material: String, age: String, style: String, photos: List<File>): Entry {
         val usesClaude = prefs.usesClaude
         val lesson = if (usesClaude) {
+            Studio.report("Your music teacher is reading the work…")
+            val images = withContext(Dispatchers.Default) { photos.take(8).map { jpegBase64(it) } }
             Studio.report("Your music teacher is planning the song…")
-            val images = photo?.let { listOf(jpegBase64(it)) } ?: emptyList()
-            val text = claude.complete(prefs.apiKey, prefs.model, LessonPrompt.build(material, age, photo != null), 12000, images) { n ->
+            val text = claude.complete(prefs.apiKey, prefs.model, LessonPrompt.build(material, age, images.size), 12000, images) { n ->
                 Studio.report("Writing the learning song · ${n / 1024} KB")
             }
             Lesson.parse(extractJson(text))
         } else {
-            if (material.isBlank()) throw IllegalStateException(if (photo != null) "Reading photos needs Claude. Add an API key in Settings, or type the words." else "Say or type what you need to learn first.")
-            SimpleLesson.make(material, age)
+            var all = material
+            if (photos.isNotEmpty()) {
+                Studio.report("Reading the photos…")
+                val read = ocr(photos)
+                if (read.isBlank() && material.isBlank()) throw IllegalStateException("Couldn't read any words in those photos. Try brighter, straighter photos of printed text, or add a Claude key in Settings to read handwriting.")
+                all = listOf(material, read).filter { it.isNotBlank() }.joinToString("\n")
+            }
+            if (all.isBlank()) throw IllegalStateException("Say, type or photograph what you need to learn first.")
+            SimpleLesson.make(all, age)
         }
         lesson.age = age; lesson.style = style
         return record(lesson)
@@ -283,6 +297,23 @@ class LearningComposer(private val ctx: Context, private val speak: SpeakToFile)
         synth.writeWav(l, r, tmp); tmp.renameTo(lib.wav(id))
         dir.deleteRecursively()
         lib.save(id, song, "Learning: " + lesson.topic, System.currentTimeMillis(), emptyList(), lesson.toJson().toString())
+    }
+
+    /** On-phone text reading for the free mode (printed text works best). */
+    private suspend fun ocr(files: List<File>): String {
+        val rec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        try {
+            return files.map { f ->
+                val image = runCatching { InputImage.fromFilePath(ctx, Uri.fromFile(f)) }.getOrNull() ?: return@map ""
+                suspendCancellableCoroutine<String> { c ->
+                    rec.process(image).addOnSuccessListener { c.resume(it.text) }.addOnFailureListener { c.resume("") }
+                }
+            }.joinToString("\n\n")
+                // Join lines that were wrapped mid-sentence; keep real paragraph breaks.
+                .replace(Regex("(?<![.!?:])\n(?!\n)"), " ")
+        } finally {
+            rec.close()
+        }
     }
 
     private fun jpegBase64(f: File): String {

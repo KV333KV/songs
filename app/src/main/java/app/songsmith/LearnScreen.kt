@@ -5,7 +5,17 @@ package app.songsmith
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -73,12 +83,12 @@ private val Sky = Color(0xFF3DA5FF)
 private val Leaf = Color(0xFF3CCB7F)
 private val Berry = Color(0xFFFF5C8A)
 
-fun requestLearn(c: MediaController, text: String, age: String, style: String, photo: File?) {
+fun requestLearn(c: MediaController, text: String, age: String, style: String, photos: List<File>) {
     val extras = Bundle().apply {
         putString(PlaybackService.EXTRA_TEXT, text)
         putString(PlaybackService.EXTRA_AGE, age)
         putString(PlaybackService.EXTRA_STYLE, style)
-        photo?.let { putString(PlaybackService.EXTRA_PHOTO, it.path) }
+        putString(PlaybackService.EXTRA_PHOTO, photos.joinToString("|") { it.path })
     }
     c.setMediaItem(MediaItem.Builder().setMediaId("learn").setRequestMetadata(MediaItem.RequestMetadata.Builder().setExtras(extras).build()).build())
     c.prepare(); c.play()
@@ -92,27 +102,84 @@ fun LearnScreen(controller: MediaController?, state: Studio.State) {
     var text by remember { mutableStateOf("") }
     var age by remember { mutableStateOf("7-9") }
     var style by remember { mutableStateOf("clap") }
-    var photo by remember { mutableStateOf<File?>(null) }
+    // Photo paths survive the camera screen (the app can be recreated while it's open).
+    var photoPaths by rememberSaveable { mutableStateOf("") }
+    var pendingShot by rememberSaveable { mutableStateOf("") }
+    val photos = photoPaths.split("|").filter { it.isNotBlank() }.map { File(it) }.filter { it.exists() }
+    val scope = rememberCoroutineScope()
     var openLesson by remember { mutableStateOf<Pair<String, String>?>(null) } // id to "sing" | "quiz"
     val lessons = remember(state.libraryVersion) { lib.list().filter { it.lesson.isNotEmpty() } }
-    val photoFile = remember { File(File(ctx.cacheDir, "photos").apply { mkdirs() }, "page.jpg") }
-    val photoUri: Uri = remember { FileProvider.getUriForFile(ctx, ctx.packageName + ".files", photoFile) }
-    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) photo = photoFile }
+    val photoDir = remember { File(ctx.cacheDir, "photos").apply { mkdirs() } }
+    fun addPhotos(fs: List<File>) { photoPaths = (photos + fs).distinct().take(10).joinToString("|") { it.path } }
+    val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = File(pendingShot)
+        if (ok && f.exists() && f.length() > 0) addPhotos(listOf(f))
+        pendingShot = ""
+    }
+    fun shoot() {
+        val f = File(photoDir, "p${System.currentTimeMillis()}.jpg")
+        pendingShot = f.path
+        val uri: Uri = FileProvider.getUriForFile(ctx, ctx.packageName + ".files", f)
+        camera.launch(uri)
+    }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { uris ->
+        scope.launch {
+            val copied = withContext(Dispatchers.IO) {
+                uris.mapIndexedNotNull { i, u ->
+                    runCatching {
+                        val f = File(photoDir, "g${System.currentTimeMillis()}_$i.jpg")
+                        ctx.contentResolver.openInputStream(u)!!.use { input -> f.outputStream().use { input.copyTo(it) } }
+                        f
+                    }.getOrNull()
+                }
+            }
+            addPhotos(copied)
+        }
+    }
     val talk = rememberDictation("Say or read what you need to learn") { said -> text = if (text.isBlank()) said else "$text $said" }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Learn with music", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
-        Text("Say it, type it or snap the page. Songsmith turns it into a song that helps it stick.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Say it, type it or photograph the work, as many pages as you like. Songsmith turns it into one song that helps it stick.", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BigTile("Talk", "Say or read it out loud", Sun, R.drawable.ic_mic, Modifier.weight(1f), talk)
-            BigTile(if (photo != null) "Photo added" else "Snap the page", if (prefs.usesClaude) "Take a photo of the book" else "Needs Claude (Settings)",
-                Sky, R.drawable.ic_spark, Modifier.weight(1f)) { if (prefs.usesClaude) camera.launch(photoUri) }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            BigTile("Talk", "Say or read it", Sun, R.drawable.ic_mic, Modifier.weight(1f), talk)
+            BigTile("Take photos", "Snap each page", Sky, R.drawable.ic_camera, Modifier.weight(1f)) { shoot() }
+            BigTile("Choose photos", "From the gallery", Berry, R.drawable.ic_gallery, Modifier.weight(1f)) {
+                gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            }
+        }
+        if (photos.isNotEmpty()) {
+            Text("${photos.size} photo${if (photos.size > 1) "s" else ""} of the work", fontWeight = FontWeight.Bold)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                items(photos, key = { it.path }) { f ->
+                    Box {
+                        val thumb = remember(f.path) {
+                            runCatching {
+                                BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inSampleSize = 8 })?.asImageBitmap()
+                            }.getOrNull()
+                        }
+                        if (thumb != null) Image(thumb, "Photo of the work", Modifier.size(84.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
+                        else Box(Modifier.size(84.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant))
+                        Box(Modifier.align(Alignment.TopEnd).padding(4.dp).size(26.dp).clip(CircleShape).background(Color(0xCC000000))
+                            .clickable { photoPaths = photos.filter { it != f }.joinToString("|") { it.path } }, contentAlignment = Alignment.Center) {
+                            Text("✕", color = Color.White, fontSize = 13.sp)
+                        }
+                    }
+                }
+                item {
+                    Box(Modifier.size(84.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable { shoot() }, contentAlignment = Alignment.Center) {
+                        Text("+ page", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Text(if (prefs.usesClaude) "Claude reads every page, including handwriting and diagrams, and makes one song from all of them."
+                else "Free mode reads printed text on the phone. For handwriting and diagrams, add a Claude key in Settings.",
+                fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         OutlinedTextField(text, { text = it }, modifier = Modifier.fillMaxWidth().heightIn(min = 130.dp), shape = RoundedCornerShape(18.dp),
             label = { Text("What do you need to learn?") },
             placeholder = { Text("The planets in order from the Sun: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune.") })
-        if (photo != null) TextButton(onClick = { photo = null }) { Text("Remove photo") }
 
         Text("How old is the learner?", fontWeight = FontWeight.Bold)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
@@ -125,8 +192,8 @@ fun LearnScreen(controller: MediaController?, state: Studio.State) {
             items(KID_STYLES.entries.toList()) { (k, label) -> FilterChip(selected = style == k, onClick = { style = k }, label = { Text(label) }) }
         }
         Button(
-            onClick = { controller?.let { requestLearn(it, text.trim(), age, style, photo) } },
-            enabled = controller != null && !state.busy && (text.isNotBlank() || photo != null),
+            onClick = { controller?.let { requestLearn(it, text.trim(), age, style, photos) } },
+            enabled = controller != null && !state.busy && (text.isNotBlank() || photos.isNotEmpty()),
             modifier = Modifier.fillMaxWidth().height(62.dp), shape = RoundedCornerShape(20.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Leaf, contentColor = Color(0xFF06210F)),
         ) { Text(if (state.busy) "Making your song…" else "Make my learning song", fontSize = 19.sp, fontWeight = FontWeight.ExtraBold) }
@@ -149,12 +216,12 @@ fun LearnScreen(controller: MediaController?, state: Studio.State) {
 @Composable
 private fun BigTile(title: String, sub: String, color: Color, icon: Int, modifier: Modifier, onClick: () -> Unit) {
     Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(22.dp), color = color.copy(alpha = .18f), border = BorderStroke(2.dp, color)) {
-        Column(Modifier.padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(56.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
+        Column(Modifier.padding(vertical = 14.dp, horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(Modifier.size(50.dp).clip(CircleShape).background(color), contentAlignment = Alignment.Center) {
                 Icon(painterResource(icon), null, tint = Color(0xFF14181F), modifier = Modifier.size(28.dp))
             }
             Spacer(Modifier.height(8.dp))
-            Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp)
+            Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, textAlign = TextAlign.Center)
             Text(sub, fontSize = 12.sp, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
