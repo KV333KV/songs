@@ -181,12 +181,17 @@ fun LearnScreen(controller: MediaController?, state: Studio.State) {
             label = { Text("What do you need to learn?") },
             placeholder = { Text("The planets in order from the Sun: Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune.") })
 
-        Text("How old is the learner?", fontWeight = FontWeight.Bold)
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            AGE_BANDS.forEachIndexed { i, a ->
-                SegmentedButton(selected = age == a, onClick = { age = a }, shape = SegmentedButtonDefaults.itemShape(i, AGE_BANDS.size)) { Text(a.replace("-", "–")) }
-            }
+        Text("Who is learning?", fontWeight = FontWeight.Bold)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(AGE_BANDS) { a -> FilterChip(selected = age == a, onClick = { age = a }, label = { Text(ageLabel(a), fontWeight = FontWeight.Bold) }) }
         }
+        Text(when (age) {
+            "4-6" -> "Short, simple lines, a slower voice and lots of repetition."
+            "7-9" -> "Simple words, a catchy chorus and shout-back answers."
+            "10-13" -> "More facts, subject words explained, never babyish."
+            "14-18" -> "Exam-focused: definitions, formulas, mnemonics, a 4-option quiz and a grown-up tone."
+            else -> "Adult tone: precise terms, mnemonics and a 4-option quiz."
+        }, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Song style", fontWeight = FontWeight.Bold)
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(KID_STYLES.entries.toList()) { (k, label) -> FilterChip(selected = style == k, onClick = { style = k }, label = { Text(label) }) }
@@ -238,7 +243,7 @@ private fun LessonCard(e: Entry, lesson: Lesson, controller: MediaController?, e
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text(lesson.title, fontWeight = FontWeight.Bold)
-                    Text("Ages ${lesson.age.replace("-", "–")} · ${KID_STYLES[lesson.style] ?: ""} · ${lesson.keyFacts.size} key facts", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text((if (lesson.age == "adult") "Adult" else "Ages ${ageLabel(lesson.age)}") + " · ${KID_STYLES[lesson.style] ?: ""} · ${lesson.keyFacts.size} key facts", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 FilledIconButton(onClick = { controller?.let { playSong(it, e.id) } }, enabled = controller != null) { Icon(painterResource(R.drawable.ic_play), "Play") }
             }
@@ -248,7 +253,7 @@ private fun LessonCard(e: Entry, lesson: Lesson, controller: MediaController?, e
             }
             if (expanded && mode == "sing") SingAlong(e.id, lesson, controller)
             if (expanded && mode == "quiz") Quiz(lesson) { controller?.let { playSong(it, e.id) }; onMode("sing") }
-            if (expanded && lesson.parentTip.isNotBlank()) Text("For grown-ups: ${lesson.parentTip}", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (expanded && lesson.parentTip.isNotBlank()) Text((if (isYoung(lesson.age)) "For grown-ups: " else "Study tip: ") + lesson.parentTip, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

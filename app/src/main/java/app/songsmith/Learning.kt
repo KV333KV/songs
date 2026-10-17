@@ -24,7 +24,9 @@ import kotlin.math.min
 
 /* ============================== the lesson ============================== */
 
-val AGE_BANDS = listOf("4-6", "7-9", "10-13")
+val AGE_BANDS = listOf("4-6", "7-9", "10-13", "14-18", "adult")
+fun ageLabel(a: String) = if (a == "adult") "Adult" else a.replace("-", "–")
+fun isYoung(a: String) = a in setOf("4-6", "7-9", "10-13")
 val KID_STYLES = linkedMapOf("clap" to "Clap-along", "chant" to "Chant", "dance" to "Dance", "calm" to "Calm")
 
 class LessonLine(val text: String, val answer: String = "")
@@ -100,35 +102,59 @@ class Lesson(
 /* ============================== the teacher (prompt) ============================== */
 
 object LessonPrompt {
+    private class Profile(
+        val who: String, val facts: String, val syl: String, val words: String, val role: String, val tone: String,
+        val extra: String, val quizSize: Int, val options: Int, val tipFor: String,
+    )
+
+    private fun profile(age: String) = when (age) {
+        "4-6" -> Profile("a child aged 4 to 6", "3 to 4", "6", "very simple words a 5-year-old knows", "an experienced foundation-phase teacher, learning designer and children's songwriter",
+            "Warm, playful and encouraging, with sounds and actions children can copy.", "", 4, 3, "a parent")
+        "7-9" -> Profile("a child aged 7 to 9", "4 to 6", "8", "simple everyday words for an 8-year-old", "an experienced primary-school teacher, learning designer and children's songwriter",
+            "Warm, fun and encouraging.", "", 5, 3, "a parent")
+        "10-13" -> Profile("a learner aged 10 to 13", "6 to 8", "10", "clear words for a 12-year-old, with subject terms defined", "an experienced senior-phase teacher, learning designer and songwriter",
+            "Upbeat and encouraging, never babyish.", "", 5, 3, "a parent")
+        "14-18" -> Profile("a high-school learner aged 14 to 18", "7 to 10", "12", "the correct subject terminology for their grade, each term explained once in plain words", "an experienced high-school teacher, exam coach, learning designer and songwriter",
+            "Confident and cool, like a track they'd actually play: no nursery-rhyme tone, no talking down. Light humour is welcome.",
+            """
+- Focus on what gets marks: exact definitions, formulas, key dates, cause and effect, steps of a process, and the command words examiners use.
+- Where it helps, build a mnemonic or acronym into the chorus and say what each letter stands for.
+- Use contrast pairs for things that are easily confused (for example mitosis versus meiosis).""", 8, 4, "the learner (a study tip)")
+        else -> Profile("an adult learner", "7 to 12", "12", "precise adult language with the correct technical terms", "an expert instructional designer, subject-matter teacher and songwriter",
+            "Clear, smart and motivating, like a good podcast host. Never childish.",
+            """
+- Focus on the knowledge they will actually need to recall: definitions, rules, figures, steps, and how the ideas connect.
+- Where it helps, build a mnemonic or acronym into the chorus and say what each letter stands for.
+- Use contrast pairs for things that are easily confused.""", 8, 4, "the learner (a study tip)")
+    }
+
     fun build(material: String, age: String, photos: Int): String {
-        val (facts, syl, words) = when (age) {
-            "4-6" -> Triple("3 to 4", "6", "very simple words a 5-year-old knows")
-            "10-13" -> Triple("6 to 8", "10", "clear words for a 12-year-old, with subject terms defined")
-            else -> Triple("4 to 6", "8", "simple everyday words for an 8-year-old")
-        }
+        val p = profile(age)
+        val photoNote = if (photos > 0) " (also in the $photos attached photo${if (photos > 1) "s" else ""} of the learner's work; read every page carefully, including handwriting, tables and diagrams, and combine them into one song)" else ""
+        val young = age in setOf("4-6", "7-9", "10-13")
         return """
-You are an experienced primary-school teacher, learning designer and children's songwriter. You know how memory works: chunking, repetition with identical wording, retrieval practice, rhyme and rhythm as memory hooks, concrete examples a child can picture, and spaced review.
+You are ${p.role}. You know how memory works: chunking, repetition with identical wording, retrieval practice, rhyme and rhythm as memory hooks, concrete examples the learner can picture, and spaced review.
 
-A child aged $age needs to learn the material below. Turn it into a learning song that helps them understand it and remember it.
+${p.who.replaceFirstChar { it.uppercase() }} needs to learn the material below. Turn it into a learning song that helps them understand it and remember it.
 
-THE MATERIAL${if (photos > 0) " (also in the $photos attached photo${if (photos > 1) "s" else ""} of the child's work; read every page carefully, including handwriting, tables and diagrams, and combine them into one song)" else ""}:
+THE MATERIAL$photoNote:
 ${material.ifBlank { "(see the photos)" }}
 
 Teaching rules:
-1. Accuracy first. Only use facts that are correct and supported by the material or standard school knowledge. Never invent numbers, dates, names or facts. If the material contains a mistake, use the correct fact and mention it kindly in parentTip.
-2. Pick the $facts most important facts as keyFacts: short, exact sentences in the wording the child should remember.
-3. The chorus holds the key facts in 4 lines with end rhymes, at most $syl syllables per line. It is repeated with exactly the same words every time.
-4. Each verse explains one or two facts with a concrete example or picture the child can imagine. Use $words. Define any new word in the line itself.
-5. A call-and-response section: the song asks a question ("call") and the children shout the key answer ("answer", 1 to 4 words). This is retrieval practice.
-6. A quiz section near the end: questions ("q") with short answers ("a"); the song pauses so the child can answer before hearing it.
+1. Accuracy first. Only use facts that are correct and supported by the material or standard curriculum knowledge. Never invent numbers, dates, names, formulas or facts. If the material contains a mistake, use the correct fact and mention it kindly in parentTip.
+2. Pick the ${p.facts} most important facts as keyFacts: short, exact sentences in the wording the learner should remember.
+3. The chorus holds the key facts in 4 lines with end rhymes, at most ${p.syl} syllables per line. It is repeated with exactly the same words every time.
+4. Each verse explains one or two facts with a concrete example the learner can picture. Use ${p.words}. Define any new term in the line itself.
+5. A call-and-response section: the song asks a question ("call") and the crowd answers with the key word or phrase ("answer", 1 to 5 words). This is retrieval practice.
+6. A quiz section near the end: questions ("q") with short answers ("a"); the song pauses so the learner can answer before hearing it.
 7. Every line is spoken in rhythm over a beat, so keep lines short and punchy with natural stress. One idea per line.
 8. Write in the same language as the material (for example English or Afrikaans). Put its two-letter code in "language".
-9. Keep it warm, encouraging and fun. Everything must be suitable for children. If the material isn't suitable for children, write a gentle general song about learning instead.
-10. Everything is original writing; never reuse lyrics from existing songs.
+9. Tone: ${p.tone} ${if (young) "Everything must be suitable for children. If the material isn't suitable for children, write a gentle general song about learning instead." else "Keep it respectful and suitable for a general audience."}
+10. Everything is original writing; never reuse lyrics from existing songs.${p.extra}
 
 Order the sections like this: chorus, verse, chorus, call, verse, chorus, quiz, chorus.
 
-Then write a 5-question multiple-choice quiz (3 options each, "answer" is the index of the right option, "explain" is one encouraging sentence), and a one-sentence parentTip on how to practise, using spaced review (for example: play it again tonight and tomorrow morning, then sing just the chorus in three days).
+Then write a ${p.quizSize}-question multiple-choice quiz (${p.options} options each, "answer" is the index of the right option, "explain" is one encouraging sentence that teaches why), and a one-sentence parentTip written for ${p.tipFor} on how to practise with spaced review (for example: play it again tonight and tomorrow morning, then just the chorus in three days and again before the test).
 
 Reply with ONLY one JSON object in this shape:
 {"title":"The Planets Song","topic":"The eight planets in order","language":"en",
@@ -150,8 +176,8 @@ Reply with ONLY one JSON object in this shape:
 /** Without an API key: turns the child's own text into a chant with a chorus, echo answers and a quiz. */
 object SimpleLesson {
     fun make(text: String, age: String): Lesson {
-        val maxWords = when (age) { "4-6" -> 7; "10-13" -> 12; else -> 9 }
-        val maxFacts = when (age) { "4-6" -> 4; "10-13" -> 8; else -> 6 }
+        val maxWords = when (age) { "4-6" -> 7; "7-9" -> 9; "10-13" -> 12; else -> 14 }
+        val maxFacts = when (age) { "4-6" -> 4; "7-9" -> 6; "10-13" -> 8; else -> 10 }
         val sentences = text.split(Regex("[.!?;\\n]+")).map { it.trim().replace(Regex("\\s+"), " ") }.filter { it.split(" ").size >= 2 }
         val facts = sentences.flatMap { s ->
             val w = s.split(" ")
@@ -178,7 +204,7 @@ object SimpleLesson {
             QuizItem(q, opts, opts.indexOf(a.trimEnd('!')), "Remember: $f.")
         }
         return Lesson("Let's learn: $topicWords", topicWords, "en", facts, listOf(chorus, verse1, chorus, call, verse2, chorus, quizLines, chorus), quiz,
-            "Play it again tonight and tomorrow morning, then just sing the chorus together in three days.")
+            if (isYoung(age)) "Play it again tonight and tomorrow morning, then just sing the chorus together in three days." else "Play it tonight and tomorrow morning, then once more in three days and again the night before the test.")
     }
 }
 
@@ -223,12 +249,13 @@ class LearningComposer(private val ctx: Context, private val speak: SpeakToFile)
         val bpm = when (lesson.style) { "chant" -> 92; "dance" -> 120; "calm" -> 80; else -> 104 }
         val bar = 4 * 60.0 / bpm
         val young = lesson.age == "4-6"
-        val teacherRate = if (young) .85f else .95f
+        val teacherRate = when { young -> .85f; isYoung(lesson.age) -> .95f; else -> 1.05f }
+        val crewPitch = if (isYoung(lesson.age)) 1.5f else 1.15f
         val dir = File(ctx.cacheDir, "lesson").apply { deleteRecursively(); mkdirs() }
         var n = 0
         suspend fun voice(text: String, kids: Boolean): FloatArray {
             val f = File(dir, "l${n++}.wav")
-            val ok = speak(text, f, if (kids) 1.05f else teacherRate, if (kids) 1.5f else 1.0f, lesson.language)
+            val ok = speak(text, f, if (kids) 1.05f else teacherRate, if (kids) crewPitch else 1.0f, lesson.language)
             return if (ok && f.exists()) readAnyWav(f, sr) else FloatArray(0)
         }
         Studio.report("Recording the voices…", 0f)
