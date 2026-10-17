@@ -558,6 +558,8 @@ fun SettingsScreen() {
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
+        val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
+        Text("Songsmith version $version", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(key, { key = it; prefs.apiKey = it }, label = { Text("Anthropic API key") }, singleLine = true,
             visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
         Text("Create one at console.anthropic.com. Each song is billed to that account. The key stays on this phone.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
