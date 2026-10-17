@@ -32,6 +32,12 @@ class Prefs(ctx: Context) {
         get() = sp.getString("engine", "claude") ?: "claude"
         set(v) = sp.edit().putString("engine", v).apply()
     val usesClaude: Boolean get() = engine == "claude" && apiKey.isNotBlank()
+    var updateToken: String
+        get() = sp.getString("updateToken", "") ?: ""
+        set(v) = sp.edit().putString("updateToken", v.trim()).apply()
+    var autoUpdateCheck: Boolean
+        get() = sp.getBoolean("autoUpdateCheck", true)
+        set(v) = sp.edit().putBoolean("autoUpdateCheck", v).apply()
     var autoCompose: Boolean
         get() = sp.getBoolean("autoCompose", true)
         set(v) = sp.edit().putBoolean("autoCompose", v).apply()

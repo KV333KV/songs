@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -205,11 +206,14 @@ fun App(controller: MediaController?) {
     var tab by remember { mutableStateOf(0) }
     var driving by remember { mutableStateOf(false) }
     val state by Studio.state.collectAsStateWithLifecycle()
+    val appCtx = LocalContext.current
+    LaunchedEffect(Unit) { Updates.autoCheck(appCtx) }
 
     if (driving) { DrivingScreen(controller, state) { driving = false }; return }
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        topBar = { Box(Modifier.statusBarsPadding()) { UpdateBanner() } },
         bottomBar = {
             Column {
                 NowPlaying(controller)
@@ -563,6 +567,7 @@ fun SettingsScreen() {
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
+        UpdateSection()
         val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
         Text("Songsmith version $version", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Composer", fontWeight = FontWeight.Bold, fontSize = 18.sp)
