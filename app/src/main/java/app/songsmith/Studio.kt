@@ -50,6 +50,8 @@ class Prefs(ctx: Context) {
         get() = sp.getString("sound", "real") ?: "real"
         set(v) = sp.edit().putString("sound", v).apply()
     val usesLyria: Boolean get() = sound == "real" && geminiKey.isNotBlank()
+    /** Free, instrumental-only live model (Lyria RealTime). */
+    val usesLive: Boolean get() = sound == "live" && geminiKey.isNotBlank()
     var autoCompose: Boolean
         get() = sp.getBoolean("autoCompose", true)
         set(v) = sp.edit().putBoolean("autoCompose", v).apply()
@@ -93,7 +95,7 @@ class Library(ctx: Context) {
         return Entry(
             id = id, title = song.title, genre = song.genre, bpm = song.bpm, key = song.key,
             vocal = song.instruments["vocal"] ?: "none",
-            seconds = if (mp3(id).exists()) m.optDouble("seconds", 0.0) else wav(id).length().let { if (it > 44) (it - 44) / (4.0 * SAMPLE_RATE) else song.seconds },
+            seconds = if (m.has("seconds")) m.optDouble("seconds", 0.0) else wav(id).length().let { if (it > 44) (it - 44) / (4.0 * SAMPLE_RATE) else song.seconds },
             created = m.optLong("created"), updated = m.optLong("updated"), brief = m.optString("brief"),
             lyrics = song.lyricsText(), summary = song.summary,
             samples = m.optJSONArray("samples")?.let { a -> (0 until a.length()).map { a.getString(it) } } ?: emptyList(),
@@ -151,6 +153,7 @@ class Composer(ctx: Context) {
     suspend fun compose(brief: String, voices: Voices, length: String, sampleIds: List<String> = emptyList()): Entry {
         val metas = sampleIds.mapNotNull { store.meta(it) }
         if (prefs.usesLyria) return composeReal(brief, voices, length, metas)
+        if (prefs.usesLive) return composeLive(brief, length, metas)
         if (!prefs.usesClaude) {
             Studio.report("Composing with the built-in composer…")
             val created = System.currentTimeMillis()
@@ -172,6 +175,11 @@ class Composer(ctx: Context) {
 
     suspend fun refine(id: String, change: String): Entry {
         val (entry, song) = lib.load(id) ?: throw ClaudeException("That song isn't on this phone any more.")
+        if (entry.lyriaBrief.startsWith("live:") || (prefs.usesLive && !entry.real)) {
+            val metas = entry.samples.mapNotNull { store.meta(it) }
+            val length = if (entry.seconds in 1.0..90.0) "short" else "full"
+            return composeLive(entry.brief, length, metas, change, entry.lyriaBrief.removePrefix("live:").ifBlank { null }, id, entry.created)
+        }
         if (entry.real || prefs.usesLyria) {
             val metas = entry.samples.mapNotNull { store.meta(it) }
             val length = if (entry.seconds in 1.0..90.0) "short" else "full"
@@ -236,6 +244,31 @@ class Composer(ctx: Context) {
         val song = placeholderSong(title, genre, bpm, key, summary, lyrics, voices.combo())
         val fullBrief = if (change != null) (brief + "\n" + change).trim() else brief
         return lib.save(id, song, fullBrief, created, metas.map { it.id }, real = mapOf("real" to true, "lyriaBrief" to lyriaBrief, "seconds" to secs))
+    }
+
+    /** Free real audio: Lyria RealTime performs a planned track live and we record it (instrumental only). */
+    private suspend fun composeLive(
+        brief: String, length: String, metas: List<SampleMeta>,
+        change: String? = null, previous: String? = null, reuseId: String? = null, created: Long = System.currentTimeMillis(),
+    ): Entry {
+        val plan = if (prefs.usesClaude) {
+            Studio.report("Claude is planning the performance…")
+            runCatching {
+                LyriaLive.parsePlan(extractJson(claude.complete(prefs.apiKey, prefs.model, LyriaLive.producerRequest(brief, length, metas, change, previous), 3000)), length)
+            }.getOrElse { LyriaLive.templatePlan(listOf(brief, change ?: "").joinToString(" "), length, metas, created) }
+        } else LyriaLive.templatePlan(listOf(brief, change ?: "").filter { it.isNotBlank() }.joinToString(". "), length, metas, created + (change?.hashCode() ?: 0))
+        val id = reuseId ?: ("l" + System.currentTimeMillis().toString(36))
+        val tmp = File(lib.wav(id).path + ".tmp")
+        Studio.report("Recording live with Google Lyria… (takes about as long as the track)", 0f)
+        LyriaLive.record(prefs.geminiKey, plan, tmp) { p -> Studio.report("Recording live with Google Lyria…", p) }
+        lib.mp3(id).delete()
+        tmp.renameTo(lib.wav(id))
+        val secs = Lyria.durationSeconds(lib.wav(id)).takeIf { it > 0 } ?: plan.seconds
+        val song = placeholderSong(plan.title, "Live instrumental", plan.bpm, LyriaLive.keyName(plan.scale),
+            plan.summary.ifBlank { "Recorded live with Google Lyria RealTime." }, "", "none")
+        val planText = plan.parts.joinToString(" | ") { p -> "${p.at.toInt()}s: " + p.prompts.joinToString(", ") { it.first } }
+        val fullBrief = if (change != null) (brief + "\n" + change).trim() else brief
+        return lib.save(id, song, fullBrief, created, metas.map { it.id }, real = mapOf("real" to true, "lyriaBrief" to "live:$planText", "seconds" to secs))
     }
 
     /** A soft chord bed to play in the car while Claude is writing. */

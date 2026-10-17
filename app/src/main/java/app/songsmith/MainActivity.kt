@@ -384,6 +384,7 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onHelp: () -
             Text(if (state.busy) "Composing…" else "Compose & play", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
         }
         Text(when {
+                prefs.usesLive -> "Free real audio: Google Lyria RealTime records an instrumental track live (vocals are skipped)."
                 prefs.usesLyria && prefs.usesClaude -> "Real audio: Claude produces, Google Lyria records a finished track."
                 prefs.usesLyria -> "Real audio from Google Lyria. Add a Claude key for smarter production briefs."
                 prefs.usesClaude -> "Sketch mode with Claude. Add a Google key in Settings for real, finished audio."
@@ -633,13 +634,15 @@ fun SettingsScreen(onHelp: () -> Unit = {}) {
         Text("Songsmith version $version", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Sound", fontWeight = FontWeight.Bold, fontSize = 18.sp)
         SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            listOf("real" to "Real audio", "sketch" to "Sketch (free)").forEachIndexed { i, (v, label) ->
-                SegmentedButton(selected = sound == v, onClick = { sound = v; prefs.sound = v }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+            listOf("real" to "Real", "live" to "Free real", "sketch" to "Sketch").forEachIndexed { i, (v, label) ->
+                SegmentedButton(selected = sound == v, onClick = { sound = v; prefs.sound = v }, shape = SegmentedButtonDefaults.itemShape(i, 3)) { Text(label) }
             }
         }
         Text(
             when {
                 sound == "sketch" -> "Sketch uses the in-app instruments: free and offline, but it sounds like a demo."
+                sound == "live" -> "Free real audio (experimental): Google Lyria RealTime records an instrumental track live, steered through intro, build, breakdown and drop. No vocals. Recording takes about as long as the track. " +
+                    (if (gemini.isBlank()) "Add your Google key below (billing not required to try)." else "If Google asks for billing, switch to Real or Sketch.")
                 gemini.isBlank() -> "Real audio makes finished, mastered tracks with Google Lyria (about US$0.08 a track). Add your Google key below. Until then, sketches are made."
                 else -> "Real audio: finished, mastered tracks from Google Lyria, billed to your Google key. Learning songs are sung by real singers."
             }, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
