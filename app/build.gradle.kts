@@ -17,10 +17,23 @@ android {
         versionName = "1.$build"
     }
 
+    // One fixed key for every build, so new versions always install over the old one.
+    signingConfigs {
+        create("songsmith") {
+            storeFile = file("songsmith.keystore")
+            storePassword = "songsmith"
+            keyAlias = "songsmith"
+            keyPassword = "songsmith"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("songsmith")
+        }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("songsmith")
         }
     }
     compileOptions {
