@@ -193,10 +193,6 @@ class PlaybackService : MediaLibraryService() {
 
     private suspend fun startCompose(brief: String, voices: Voices, length: String, sampleIds: List<String> = emptyList()): MutableList<MediaItem> {
         if (job?.isActive == true) return say("I'm still working on the last song. It'll start as soon as it's ready.")
-        if (prefs.apiKey.isBlank()) {
-            Studio.fail("Add your Anthropic API key in Settings first.")
-            return say("Open Songsmith on your phone and add your Anthropic API key in settings first.")
-        }
         job = scope.launch {
             try {
                 val e = withContext(Dispatchers.IO) { composer.compose(brief, voices, length, sampleIds) }
@@ -212,7 +208,7 @@ class PlaybackService : MediaLibraryService() {
         }
         val who = (if (voices.combo() == "none") "an instrumental" else "a track with ${voices.describe().lowercase()} vocals") +
             (if (sampleIds.isNotEmpty()) " using your samples" else "")
-        val intro = say("Composing $who. Give me about a minute.")
+        val intro = say("Composing $who. " + if (prefs.usesClaude) "Give me about a minute." else "One moment.")
         val bed = waitingFile()
         if (bed.exists()) intro.add(fileItem("waiting", bed, "Composing your song…"))
         return intro
@@ -220,7 +216,6 @@ class PlaybackService : MediaLibraryService() {
 
     private suspend fun startRefine(id: String, change: String): MutableList<MediaItem> {
         if (job?.isActive == true) return say("I'm still working on the last song.")
-        if (prefs.apiKey.isBlank()) return say("Open Songsmith on your phone and add your Anthropic API key in settings first.")
         job = scope.launch {
             try {
                 val e = withContext(Dispatchers.IO) { composer.refine(id, change) }

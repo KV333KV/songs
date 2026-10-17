@@ -27,6 +27,11 @@ class Prefs(ctx: Context) {
     var length: String
         get() = sp.getString("length", "full") ?: "full"
         set(v) = sp.edit().putString("length", v).apply()
+    /** "claude" uses the API key when there is one; "builtin" always uses the free on-phone composer. */
+    var engine: String
+        get() = sp.getString("engine", "claude") ?: "claude"
+        set(v) = sp.edit().putString("engine", v).apply()
+    val usesClaude: Boolean get() = engine == "claude" && apiKey.isNotBlank()
     var autoCompose: Boolean
         get() = sp.getBoolean("autoCompose", true)
         set(v) = sp.edit().putBoolean("autoCompose", v).apply()
@@ -106,8 +111,16 @@ class Composer(ctx: Context) {
     private val synth = Synth()
 
     suspend fun compose(brief: String, voices: Voices, length: String, sampleIds: List<String> = emptyList()): Entry {
-        Studio.report("Claude is writing your song…")
         val metas = sampleIds.mapNotNull { store.meta(it) }
+        if (!prefs.usesClaude) {
+            Studio.report("Composing with the built-in composer…")
+            val created = System.currentTimeMillis()
+            val song = withContext(Dispatchers.Default) { Generator.compose(brief, voices, length, metas, created) }
+            val id = "s" + created.toString(36)
+            render(song, id)
+            return lib.save(id, song, brief, created, metas.map { it.id })
+        }
+        Studio.report("Claude is writing your song…")
         val text = claude.complete(prefs.apiKey, prefs.model, Prompts.compose(brief, voices, length, metas)) { n ->
             Studio.report("Writing the score · ${n / 1024} KB")
         }
@@ -120,6 +133,15 @@ class Composer(ctx: Context) {
 
     suspend fun refine(id: String, change: String): Entry {
         val (entry, song) = lib.load(id) ?: throw ClaudeException("That song isn't on this phone any more.")
+        if (!prefs.usesClaude) {
+            Studio.report("Reworking “${entry.title}” with the built-in composer…")
+            val brief = (entry.brief + "\n" + change).trim()
+            val metas = entry.samples.mapNotNull { store.meta(it) }
+            val length = if (song.totalBars <= 40) "short" else "full"
+            val updated = withContext(Dispatchers.Default) { Generator.compose(brief, Voices.of(song.instruments["vocal"] ?: "none"), length, metas, entry.created) }
+            render(updated, id)
+            return lib.save(id, updated, brief, entry.created, entry.samples)
+        }
         Studio.report("Claude is reworking “${entry.title}”…")
         val metas = entry.samples.mapNotNull { store.meta(it) }
         val text = claude.complete(prefs.apiKey, prefs.model, Prompts.refine(entry.brief, song.toJson().toString(), change, metas)) { n ->

@@ -327,6 +327,8 @@ fun CreateScreen(controller: MediaController?, state: Studio.State, onDriving: (
             Icon(painterResource(R.drawable.ic_spark), null); Spacer(Modifier.width(10.dp))
             Text(if (state.busy) "Composing…" else "Compose & play", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
         }
+        Text(if (prefs.usesClaude) "Composing with Claude (your API key)." else "Composing with the free built-in composer. Add an API key in Settings to compose with Claude.",
+            fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         StatusCard(state)
 
         Card(onClick = onDriving, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
@@ -554,13 +556,26 @@ fun SettingsScreen() {
     var key by remember { mutableStateOf(prefs.apiKey) }
     var model by remember { mutableStateOf(prefs.model) }
     var auto by remember { mutableStateOf(prefs.autoCompose) }
+    var engine by remember { mutableStateOf(prefs.engine) }
     var test by remember { mutableStateOf("") }
 
     Column(Modifier.verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text("Settings", fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
         val version = remember { runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }.getOrNull() ?: "?" }
         Text("Songsmith version $version", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(key, { key = it; prefs.apiKey = it }, label = { Text("Anthropic API key") }, singleLine = true,
+        Text("Composer", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+            listOf("claude" to "Claude", "builtin" to "Built-in (free)").forEachIndexed { i, (v, label) ->
+                SegmentedButton(selected = engine == v, onClick = { engine = v; prefs.engine = v }, shape = SegmentedButtonDefaults.itemShape(i, 2)) { Text(label) }
+            }
+        }
+        Text(
+            when {
+                engine == "builtin" -> "Free and works offline. Writes techno, acid, trance, psytrance, rave and drum & bass from your words and samples. Simpler than Claude."
+                key.isBlank() -> "Claude writes richer, more varied tracks. It needs an API key (optional, below). Until you add one, the free built-in composer is used."
+                else -> "Claude writes richer, more varied tracks, billed to your API key."
+            }, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedTextField(key, { key = it; prefs.apiKey = it }, label = { Text("Anthropic API key (optional)") }, singleLine = true,
             visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), modifier = Modifier.fillMaxWidth())
         Text("Create one at console.anthropic.com. Each song is billed to that account. The key stays on this phone.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         OutlinedTextField(model, { model = it; prefs.model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth())
